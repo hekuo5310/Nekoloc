@@ -20,28 +20,32 @@ class _SearchScreenState extends State<SearchScreen> {
   SearchResult? _result;
   bool _loading = false;
   String? _error;
+  int _requestId = 0;
 
   @override
   void dispose() {
+    _requestId++;
     _ctrl.dispose();
     super.dispose();
   }
 
   Future<void> _search(String q) async {
     if (q.trim().isEmpty) return;
+    final requestId = ++_requestId;
     setState(() {
       _loading = true;
       _error = null;
+      _result = null;
     });
     try {
       final r = await context.read<AppState>().api.search(q.trim());
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
       setState(() => _result = r);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && requestId == _requestId) setState(() => _loading = false);
     }
   }
 

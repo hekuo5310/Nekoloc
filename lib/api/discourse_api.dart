@@ -50,7 +50,7 @@ class DiscourseApi {
       'Accept': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
       'User-Agent':
-          'NodelocApp/1.1 (+https://github.com/hekuo5310/Nodeloc-APP)',
+          'Nekoloc/1.3 (+https://github.com/hekuo5310/Nekoloc)',
       if (apiKey != null) 'User-Api-Key': apiKey,
     };
   }
@@ -82,7 +82,7 @@ class DiscourseApi {
   Future<Map<String, dynamic>> _mutate(String method, String path,
       {Map<String, dynamic>? data, Map<String, dynamic>? query}) async {
     for (var attempt = 0; attempt < 2; attempt++) {
-      await ensureCsrf();
+      if (userApiKey == null) await ensureCsrf();
       try {
         final resp = await _dio.request(
           path,
@@ -91,7 +91,7 @@ class DiscourseApi {
           options: Options(
             method: method,
             contentType: Headers.formUrlEncodedContentType,
-            headers: {'X-CSRF-Token': _csrf},
+            headers: {if (_csrf != null && userApiKey == null) 'X-CSRF-Token': _csrf},
           ),
         );
         final map = resp.data is Map
@@ -99,7 +99,7 @@ class DiscourseApi {
             : <String, dynamic>{};
         final code = resp.statusCode ?? 500;
         // CSRF 过期 → 重新获取后重试一次
-        if (code == 403 && attempt == 0 && _isBadCsrf(map)) {
+        if (userApiKey == null && code == 403 && attempt == 0 && _isBadCsrf(map)) {
           _csrf = null;
           continue;
         }
@@ -128,6 +128,14 @@ class DiscourseApi {
   }
 
   ApiException _dioError(DioException e) {
+    final response = e.response;
+    if (response != null) {
+      final data = response.data;
+      final map = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+      final code = response.statusCode ?? 500;
+      if (code == 401) return UnauthorizedException();
+      return ApiException(_errorMessage(map, code), code);
+    }
     if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.sendTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
@@ -138,6 +146,8 @@ class DiscourseApi {
   }
 
   Future<void> ensureCsrf() async {
+    // User API Key authenticates independently of the browser cookie session.
+    if (userApiKey != null) return;
     if (_csrf != null) return;
     try {
       final resp = await _dio.get('/session/csrf.json');
@@ -182,11 +192,10 @@ class DiscourseApi {
         ? Map<String, dynamic>.from(resp.data as Map)
         : <String, dynamic>{};
 
-    // 登录成功：BAD CSRF 时重试一次
+    // CSRF 失效时提示重试，避免站点持续返回 403 导致无限递归。
     if (resp.statusCode == 403 && _isBadCsrf(map)) {
       _csrf = null;
-      await ensureCsrf();
-      return this.login(login: login, password: password, totp: totp);
+      throw ApiException('登录令牌已过期，请重试', 403);
     }
 
     final user = map['user'];
@@ -280,6 +289,25 @@ class DiscourseApi {
     final d = await _getJson('/t/$topicId/posts.json', query: {'post_ids[]': postIds});
     final list = (d['post_stream'] as Map?)?['posts'] as List? ?? [];
     return list.map((e) => Post.fromJson(e)).toList();
+  }
+
+  /// Fetch the original Markdown before editing; cooked HTML loses formatting.
+  Future<String> postRaw(int postId) async {
+    final d = await _getJson('/posts/$postId.json');
+    final raw = d['raw'];
+    if (raw is! String) throw ApiException('无法获取原始正文，请在网页版编辑');
+    return raw;
+  }
+
+  Future<void> updatePost(int postId, String raw) async {
+    await _mutate('PUT', '/posts/$postId.json', data: {'post[raw]': raw});
+  }
+
+  /// Discourse levels: muted 0, normal 1, tracking 2, watching 3.
+  Future<void> setTopicNotificationLevel(int topicId, int level) async {
+    if (level < 0 || level > 3) throw ArgumentError.value(level, 'level');
+    await _mutate('POST', '/t/$topicId/notifications.json',
+        data: {'notification_level': level.toString()});
   }
 
   /// 创建新话题。[mobileSource] 为发帖设备信息（mobile_source_* 字段，可空）
@@ -441,7 +469,9 @@ class DiscourseApi {
         '/uploads.json',
         data: form,
         onSendProgress: onProgress,
-        options: Options(headers: {'X-CSRF-Token': _csrf}),
+        options: Options(headers: {
+          if (_csrf != null && userApiKey == null) 'X-CSRF-Token': _csrf,
+        }),
       );
       final map = resp.data is Map
           ? Map<String, dynamic>.from(resp.data as Map)

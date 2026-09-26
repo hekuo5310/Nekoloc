@@ -24,7 +24,7 @@ Color _hexColor(dynamic v, Color fallback) {
     s = s.split('').map((c) => c + c).join();
   }
   if (s.length == 6) s = 'FF$s';
-  final v2 = int.tryParse(s);
+  final v2 = int.tryParse(s, radix: 16);
   if (v2 == null) return fallback;
   return Color(v2);
 }
@@ -324,6 +324,7 @@ class TopicDetail {
   final int likeCount;
   final bool closed;
   final bool archived;
+  final int? notificationLevel;
   final DateTime? createdAt;
   final List<Post> posts;
   final List<int> stream;
@@ -338,6 +339,7 @@ class TopicDetail {
     required this.likeCount,
     required this.closed,
     required this.archived,
+    this.notificationLevel,
     this.createdAt,
     required this.posts,
     required this.stream,
@@ -355,6 +357,7 @@ class TopicDetail {
       likeCount: toInt(json['like_count']) ?? 0,
       closed: toBool(json['closed']),
       archived: toBool(json['archived']),
+      notificationLevel: toInt(json['notification_level']),
       createdAt: toDate(json['created_at']),
       posts: ((ps['posts'] as List?) ?? []).map((e) => Post.fromJson(e)).toList(),
       stream: ((ps['stream'] as List?) ?? []).map((e) => toInt(e) ?? 0).toList(),
