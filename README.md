@@ -1,6 +1,6 @@
 # Nekoloc
 
-[![Build Apps](https://github.com/hekuo5310/Nodeloc-APP/actions/workflows/build.yml/badge.svg)](https://github.com/hekuo5310/Nodeloc-APP/actions/workflows/build.yml)
+[![Build Apps](https://github.com/hekuo5310/Nekoloc/actions/workflows/build.yml/badge.svg)](https://github.com/hekuo5310/Nekoloc/actions/workflows/build.yml)
 
 **Nekoloc**（neko（猫） + loc（NodeLoc））是 [NodeLoc](https://www.nodeloc.com)（自由、平等、友好、开放、有趣的互联网交流社区）的**第三方开源猫咪主题客户端**，基于 Flutter 构建，一套代码覆盖 **Android / iOS / Windows / macOS / Linux**。
 
@@ -36,7 +36,7 @@
 
 ### 方式一：Actions 构建产物（最新代码）
 
-每次推送代码后，[Actions](https://github.com/hekuo5310/Nodeloc-APP/actions/workflows/build.yml) 会自动编译全部平台。进入最新的 `Build Apps` 运行记录，在页面底部 **Artifacts** 区域下载：
+每次推送代码后，[Actions](https://github.com/hekuo5310/Nekoloc/actions/workflows/build.yml) 会自动编译全部平台。进入最新的 `Build Apps` 运行记录，在页面底部 **Artifacts** 区域下载：
 
 | 产物 | 平台 | 说明 |
 |---|---|---|
@@ -48,7 +48,7 @@
 
 ### 方式二：Releases（正式版本）
 
-推送 `v*` 标签（如 `v1.2.1`）后，CI 会自动构建全部平台并发布到 [Releases](https://github.com/hekuo5310/Nodeloc-APP/releases)：
+推送 `v*` 标签（如 `v1.2.1`）后，CI 会自动构建全部平台并发布到 [Releases](https://github.com/hekuo5310/Nekoloc/releases)：
 
 ```bash
 git tag v1.2.1
@@ -75,8 +75,8 @@ git push origin v1.2.1
 
 ```bash
 # 1. 克隆
-git clone https://github.com/hekuo5310/Nodeloc-APP.git
-cd Nodeloc-APP
+git clone https://github.com/hekuo5310/Nekoloc.git
+cd Nekoloc
 
 # 2. 生成平台工程（平台目录不入库，按本地 Flutter 版本生成）
 flutter create . --platforms=android,ios,linux,macos,windows \

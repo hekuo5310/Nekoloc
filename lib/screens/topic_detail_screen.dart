@@ -17,9 +17,10 @@ import 'composer_screen.dart';
 
 /// 提取 HTML 中所有 http(s) 图片地址（供全屏查看器翻页）
 List<String> _extractImages(String cookedHtml) {
-  return RegExp(r'<img\b[^>]*\bsrc="(https?://[^"]+)"', caseSensitive: false)
+  return RegExp(r'<img\b[^>]*\bsrc="([^"]+)"', caseSensitive: false)
       .allMatches(cookedHtml)
-      .map((m) => m.group(1)!)
+      .map((m) => Uri.parse(AppState.baseUrl).resolve(m.group(1)!).toString())
+      .where((url) => url.startsWith('https://') || url.startsWith('http://'))
       .toList();
 }
 
@@ -39,6 +40,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   bool _loadingMore = false;
   bool _likingBusy = false;
   bool _bookmarkBusy = false;
+  bool _notificationBusy = false;
   final _scroll = ScrollController();
   DateTime _openedAt = DateTime.now();
   int _reportedPosts = 0;
@@ -124,10 +126,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       final more =
           await context.read<AppState>().api.topicPosts(widget.topicId, nextIds);
       if (!mounted) return;
-      final merged = [...d.posts, ...more]
+      final merged = [...d.posts, ...more.where((p) => !loaded.contains(p.id))]
         ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
       setState(() => _detail = _copyWithPosts(d, merged));
-    } catch (_) {
+    } catch (e) {
+      _hint('加载楼层失败：$e');
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -143,6 +146,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         likeCount: d.likeCount,
         closed: d.closed,
         archived: d.archived,
+        notificationLevel: d.notificationLevel,
         createdAt: d.createdAt,
         posts: posts,
         stream: d.stream,
@@ -198,10 +202,13 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         var bid = first.bookmarkId;
         if (bid == null) {
           final list = await app.api.bookmarks(app.user!.username);
-          bid = list
-              .firstWhere((b) => b.postId == first.id,
-                  orElse: () => list.firstWhere((b) => b.topicId == d.id))
-              .id;
+          for (final bookmark in list) {
+            if (bookmark.postId == first.id || bookmark.topicId == d.id) {
+              bid = bookmark.id;
+              break;
+            }
+          }
+          if (bid == null) throw ApiException('找不到此话题的收藏记录，请刷新后重试');
         }
         await app.api.removeBookmark(bid);
       } else {
@@ -330,6 +337,37 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _editPost(Post post) async {
+    final app = context.read<AppState>();
+    try {
+      final raw = await app.api.postRaw(post.id);
+      if (!mounted) return;
+      final changed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => ComposerScreen(editPostId: post.id, initialRaw: raw)),
+      );
+      if (changed == true && mounted) _load();
+    } catch (e) {
+      _hint('无法编辑：$e');
+    }
+  }
+
+  Future<void> _changeNotificationLevel(int level) async {
+    if (_notificationBusy) return;
+    setState(() => _notificationBusy = true);
+    try {
+      await context.read<AppState>().api.setTopicNotificationLevel(widget.topicId, level);
+      if (!mounted) return;
+      // Refresh the server state rather than guessing the topic's other fields.
+      await _load();
+      _hint('通知设置已更新');
+    } catch (e) {
+      _hint('通知设置失败：$e');
+    } finally {
+      if (mounted) setState(() => _notificationBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = _detail;
@@ -368,6 +406,29 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
             icon: const Icon(Icons.open_in_new),
             onPressed: d == null ? null : _openInBrowser,
           ),
+          if (d != null && context.watch<AppState>().isLoggedIn)
+            PopupMenuButton<int>(
+              tooltip: '话题通知',
+              enabled: !_notificationBusy,
+              icon: const Icon(Icons.notifications_outlined),
+              onSelected: _changeNotificationLevel,
+              itemBuilder: (_) => [
+                for (final (level, label) in [
+                  (3, '关注：每条回复都通知'),
+                  (2, '追踪：显示未读回复'),
+                  (1, '普通：仅提及时通知'),
+                  (0, '静音：不提醒'),
+                ])
+                  PopupMenuItem(
+                    value: level,
+                    child: Row(children: [
+                      if (d.notificationLevel == level) const Icon(Icons.check, size: 18),
+                      if (d.notificationLevel == level) const SizedBox(width: 6),
+                      Text(label),
+                    ]),
+                  ),
+              ],
+            ),
           PopupMenuButton<String>(
             enabled: d != null,
             onSelected: (v) {
@@ -392,7 +453,9 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
               ? ErrorView(message: _error!, onRetry: _load)
               : d == null
                   ? const EmptyView(text: '内容不存在')
-                  : ListView.separated(
+                  : d.posts.isEmpty
+                      ? const EmptyView(text: '暂无可显示的帖子')
+                      : ListView.separated(
                       controller: _scroll,
                       padding: const EdgeInsets.only(
                           left: 10, right: 10, top: 10, bottom: 96),
@@ -414,6 +477,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                     hint: '回复 #1 ${d.posts.first.username}'),
                                 onCopyLink: () => _copyLink(d.posts.first.postNumber),
                                 onChanged: _load,
+                                onEdit: appUserOwnsPost(context, d.posts.first)
+                                    ? () => _editPost(d.posts.first) : null,
                               ),
                             ],
                           );
@@ -457,12 +522,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                               hint: '回复 #${post.postNumber} ${post.username}'),
                           onCopyLink: () => _copyLink(post.postNumber),
                           onChanged: _load,
+                          onEdit: appUserOwnsPost(context, post)
+                              ? () => _editPost(post) : null,
                         );
                       },
                     ),
     );
   }
 }
+
+bool appUserOwnsPost(BuildContext context, Post post) =>
+    context.read<AppState>().user?.username.toLowerCase() == post.username.toLowerCase();
 
 class _TopicHeader extends StatelessWidget {
   final TopicDetail detail;
@@ -522,6 +592,7 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onReply;
   final VoidCallback onCopyLink;
   final VoidCallback onChanged;
+  final VoidCallback? onEdit;
 
   const _PostCard({
     required this.post,
@@ -531,6 +602,7 @@ class _PostCard extends StatelessWidget {
     required this.onReply,
     required this.onCopyLink,
     required this.onChanged,
+    this.onEdit,
   });
 
   Future<void> _openAvatarLink(String url) async {
@@ -555,16 +627,28 @@ class _PostCard extends StatelessWidget {
         : HtmlWidget(
             post.cooked,
             onTapUrl: (url) async {
-              if (url.startsWith('http')) {
-                await _openAvatarLink(url);
+              final uri = Uri.parse(AppState.baseUrl).resolve(url);
+              if (uri.scheme != 'https' && uri.scheme != 'http') return true;
+              final parts = uri.pathSegments;
+              if (uri.host == Uri.parse(AppState.baseUrl).host &&
+                  parts.length >= 3 && parts.first == 't') {
+                final id = int.tryParse(parts[2]);
+                if (id != null && context.mounted) {
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => TopicDetailScreen(topicId: id),
+                  ));
+                  return true;
+                }
               }
+              await _openAvatarLink(uri.toString());
               return true;
             },
             // 图片：点击进入全屏查看器（缩放 / 双击 / 多图翻页）
             customWidgetBuilder: (element) {
               if (element.localName != 'img') return null;
-              final src = element.attributes['src'] ?? '';
-              if (!src.startsWith('http')) return null;
+              final rawSrc = element.attributes['src'] ?? '';
+              final src = Uri.parse(AppState.baseUrl).resolve(rawSrc).toString();
+              if (!src.startsWith('https://') && !src.startsWith('http://')) return null;
               final images = _extractImages(post.cooked);
               final index = images.indexOf(src);
               return GestureDetector(
@@ -676,9 +760,12 @@ class _PostCard extends StatelessWidget {
                   tooltip: '更多',
                   onSelected: (v) {
                     if (v == 'copy') onCopyLink();
+                    if (v == 'edit') onEdit?.call();
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'copy', child: Text('复制楼层链接')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'copy', child: Text('复制楼层链接')),
+                    if (onEdit != null)
+                      const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
                   ],
                   icon: Icon(Icons.more_horiz, size: 20, color: muted),
                 ),

@@ -303,11 +303,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ListTile(
                   leading: const Icon(Icons.code),
                   title: const Text('源代码（GitHub）'),
-                  subtitle: const Text('hekuo5310/Nodeloc-APP',
+                  subtitle: const Text('hekuo5310/Nekoloc',
                       style: TextStyle(fontSize: 12)),
                   trailing: const Icon(Icons.open_in_new, size: 18),
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/hekuo5310/Nodeloc-APP'),
+                    Uri.parse('https://github.com/hekuo5310/Nekoloc'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),

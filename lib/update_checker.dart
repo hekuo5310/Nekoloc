@@ -40,7 +40,7 @@ class UpdateInfo {
 }
 
 class UpdateChecker {
-  static const _repo = 'hekuo5310/Nodeloc-APP';
+  static const _repo = 'hekuo5310/Nekoloc';
 
   /// 拉取 GitHub 最新 Release 信息
   static Future<UpdateInfo?> fetchLatest() async {

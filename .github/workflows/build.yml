@@ -16,6 +16,18 @@ env:
   FLUTTER_VERSION: stable
 
 jobs:
+  checks:
+    name: Flutter tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter test test/models_test.dart
+
   # ============================================================ Android
   android:
     name: Android (APK / AAB)

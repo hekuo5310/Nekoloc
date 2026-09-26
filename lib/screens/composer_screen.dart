@@ -13,6 +13,8 @@ class ComposerScreen extends StatefulWidget {
   final int? topicId;
   final int? replyToPostNumber;
   final String? hint;
+  final int? editPostId;
+  final String? initialRaw;
 
   const ComposerScreen({
     super.key,
@@ -21,6 +23,8 @@ class ComposerScreen extends StatefulWidget {
     this.topicId,
     this.replyToPostNumber,
     this.hint,
+    this.editPostId,
+    this.initialRaw,
   });
 
   @override
@@ -43,6 +47,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   @override
   void initState() {
     super.initState();
+    _contentCtrl.text = widget.initialRaw ?? '';
     if (widget.isNewTopic) {
       _loadCategories();
     }
@@ -175,11 +180,14 @@ class _ComposerScreenState extends State<ComposerScreen> {
     final app = context.read<AppState>();
     try {
       // 发帖设备信息：新话题与回复携带，私信不携带
-      final mobileSource = widget.isPrivateMessage
+      final mobileSource = widget.isPrivateMessage || widget.editPostId != null
           ? null
           : await app.mobileSourceFields();
       Map<String, dynamic> result;
-      if (widget.isPrivateMessage) {
+      if (widget.editPostId != null) {
+        await app.api.updatePost(widget.editPostId!, raw);
+        result = const {};
+      } else if (widget.isPrivateMessage) {
         result = await app.api.createPrivateMessage(
           title: title,
           raw: raw,
@@ -227,6 +235,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
     final scheme = Theme.of(context).colorScheme;
     final title = widget.isPrivateMessage
         ? '写私信'
+        : widget.editPostId != null
+            ? '编辑帖子'
         : widget.isNewTopic
             ? '发起新话题'
             : '回复话题';
@@ -245,7 +255,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                       height: 18,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
-                  : const Text('发送'),
+                  : Text(widget.editPostId != null ? '保存' : '发送'),
             ),
           ),
         ],
