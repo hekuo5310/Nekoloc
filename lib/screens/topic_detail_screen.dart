@@ -202,12 +202,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         var bid = first.bookmarkId;
         if (bid == null) {
           final list = await app.api.bookmarks(app.user!.username);
-          for (final bookmark in list) {
-            if (bookmark.postId == first.id || bookmark.topicId == d.id) {
-              bid = bookmark.id;
-              break;
-            }
-          }
+          bid = bookmarkIdForPost(list, first.id, d.id);
           if (bid == null) throw ApiException('找不到此话题的收藏记录，请刷新后重试');
         }
         await app.api.removeBookmark(bid);
@@ -477,7 +472,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                     hint: '回复 #1 ${d.posts.first.username}'),
                                 onCopyLink: () => _copyLink(d.posts.first.postNumber),
                                 onChanged: _load,
-                                onEdit: appUserOwnsPost(context, d.posts.first)
+                                onEdit: d.posts.first.canEdit
                                     ? () => _editPost(d.posts.first) : null,
                               ),
                             ],
@@ -522,7 +517,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                               hint: '回复 #${post.postNumber} ${post.username}'),
                           onCopyLink: () => _copyLink(post.postNumber),
                           onChanged: _load,
-                          onEdit: appUserOwnsPost(context, post)
+                          onEdit: post.canEdit
                               ? () => _editPost(post) : null,
                         );
                       },
@@ -530,9 +525,6 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     );
   }
 }
-
-bool appUserOwnsPost(BuildContext context, Post post) =>
-    context.read<AppState>().user?.username.toLowerCase() == post.username.toLowerCase();
 
 class _TopicHeader extends StatelessWidget {
   final TopicDetail detail;
@@ -631,7 +623,7 @@ class _PostCard extends StatelessWidget {
               if (uri.scheme != 'https' && uri.scheme != 'http') return true;
               final parts = uri.pathSegments;
               if (uri.host == Uri.parse(AppState.baseUrl).host &&
-                  parts.length >= 3 && parts.first == 't') {
+                  parts.length == 3 && parts.first == 't') {
                 final id = int.tryParse(parts[2]);
                 if (id != null && context.mounted) {
                   Navigator.push(context, MaterialPageRoute(
@@ -640,6 +632,8 @@ class _PostCard extends StatelessWidget {
                   return true;
                 }
               }
+              // Floor-specific links must retain their post number. The
+              // browser can load even a post outside the app's first batch.
               await _openAvatarLink(uri.toString());
               return true;
             },

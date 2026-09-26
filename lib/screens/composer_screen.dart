@@ -135,7 +135,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
-    final raw = _contentCtrl.text.trim();
+    // Editing must preserve Markdown indentation and trailing newlines.
+    final raw = widget.editPostId == null
+        ? _contentCtrl.text.trim()
+        : _contentCtrl.text;
     if (widget.isPrivateMessage) {
       final targets = _recipientsCtrl.text
           .split(RegExp(r'[,，\s]+'))
@@ -161,7 +164,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       setState(() => _error = '请输入标题');
       return;
     }
-    if (raw.isEmpty) {
+    if (raw.trim().isEmpty) {
       setState(() => _error = '请输入内容（支持 Markdown）');
       return;
     }
