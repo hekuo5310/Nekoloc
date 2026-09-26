@@ -1,5 +1,19 @@
 import 'dart:ui' show Color;
 
+/// Only plain topic URLs can be opened here without losing a post target.
+/// Both /t/slug/123/4 and /t/123/4 point at a specific floor.
+int? inAppTopicId(Uri url, Uri site) {
+  if (url.host != site.host || url.scheme != site.scheme ||
+      url.query.isNotEmpty || url.fragment.isNotEmpty) return null;
+  final parts = url.pathSegments;
+  if (parts.isEmpty || parts.first != 't') return null;
+  if (parts.length == 2) return int.tryParse(parts[1]);
+  if (parts.length == 3 && int.tryParse(parts[1]) == null) {
+    return int.tryParse(parts[2]);
+  }
+  return null;
+}
+
 String twoDigits(int n) => n.toString().padLeft(2, '0');
 
 /// 中文相对时间

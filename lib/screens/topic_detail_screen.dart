@@ -621,16 +621,12 @@ class _PostCard extends StatelessWidget {
             onTapUrl: (url) async {
               final uri = Uri.parse(AppState.baseUrl).resolve(url);
               if (uri.scheme != 'https' && uri.scheme != 'http') return true;
-              final parts = uri.pathSegments;
-              if (uri.host == Uri.parse(AppState.baseUrl).host &&
-                  parts.length == 3 && parts.first == 't') {
-                final id = int.tryParse(parts[2]);
-                if (id != null && context.mounted) {
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => TopicDetailScreen(topicId: id),
-                  ));
-                  return true;
-                }
+              final id = inAppTopicId(uri, Uri.parse(AppState.baseUrl));
+              if (id != null && context.mounted) {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => TopicDetailScreen(topicId: id),
+                ));
+                return true;
               }
               // Floor-specific links must retain their post number. The
               // browser can load even a post outside the app's first batch.
