@@ -225,6 +225,7 @@ class Post {
   final DateTime? createdAt;
   final int likeCount;
   final bool likedByMe;
+  final bool canEdit;
   final bool hidden;
   final int? replyToPostNumber;
   final bool bookmarked;
@@ -244,6 +245,7 @@ class Post {
     this.createdAt,
     required this.likeCount,
     this.likedByMe = false,
+    this.canEdit = false,
     this.hidden = false,
     this.replyToPostNumber,
     this.bookmarked = false,
@@ -273,6 +275,7 @@ class Post {
       createdAt: toDate(json['created_at']),
       likeCount: likeCount,
       likedByMe: liked,
+      canEdit: toBool(json['can_edit']),
       hidden: toBool(json['hidden']),
       replyToPostNumber: toInt(json['reply_to_post_number']),
       bookmarked: toBool(json['bookmarked']),
@@ -304,6 +307,7 @@ class Post {
         createdAt: createdAt,
         likeCount: likeCount ?? this.likeCount,
         likedByMe: likedByMe ?? this.likedByMe,
+        canEdit: canEdit,
         hidden: hidden,
         replyToPostNumber: replyToPostNumber,
         bookmarked: bookmarked ?? this.bookmarked,
@@ -357,7 +361,7 @@ class TopicDetail {
       likeCount: toInt(json['like_count']) ?? 0,
       closed: toBool(json['closed']),
       archived: toBool(json['archived']),
-      notificationLevel: toInt(json['notification_level']),
+      notificationLevel: toInt((json['details'] as Map?)?['notification_level']),
       createdAt: toDate(json['created_at']),
       posts: ((ps['posts'] as List?) ?? []).map((e) => Post.fromJson(e)).toList(),
       stream: ((ps['stream'] as List?) ?? []).map((e) => toInt(e) ?? 0).toList(),
@@ -558,14 +562,28 @@ class BookmarkItem {
 
   factory BookmarkItem.fromJson(dynamic json) {
     final user = json['user'];
+    final type = json['bookmarkable_type']?.toString();
     return BookmarkItem(
       id: toInt(json['id']) ?? 0,
       topicId: toInt(json['topic_id']),
-      postId: toInt(json['bookmarkable_id']),
+      postId: type == 'Topic' ? null : toInt(json['bookmarkable_id']),
       title: (json['fancy_title'] ?? json['title'])?.toString() ?? '',
       excerpt: json['excerpt']?.toString() ?? '',
       createdAt: toDate(json['created_at']),
       username: user is Map ? user['username']?.toString() : null,
     );
   }
+}
+
+/// Find the bookmark for a post without selecting a different floor's bookmark.
+int? bookmarkIdForPost(List<BookmarkItem> bookmarks, int postId, int topicId) {
+  for (final bookmark in bookmarks) {
+    if (bookmark.postId == postId) return bookmark.id;
+  }
+  for (final bookmark in bookmarks) {
+    if (bookmark.postId == null && bookmark.topicId == topicId) {
+      return bookmark.id;
+    }
+  }
+  return null;
 }

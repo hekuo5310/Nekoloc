@@ -17,10 +17,30 @@ void main() {
     final topic = TopicDetail.fromJson({
       'id': 10,
       'title': 'test',
-      'notification_level': 3,
-      'post_stream': {'posts': [], 'stream': []},
+      'details': {'notification_level': 3},
+      'post_stream': {'posts': [
+        {'id': 22, 'post_number': 1, 'username': 'example', 'can_edit': true},
+      ], 'stream': [22]},
     });
     expect(topic.notificationLevel, 3);
-    expect(topic.posts, isEmpty);
+    expect(topic.posts.single.canEdit, isTrue);
+  });
+
+  test('exact post bookmark takes precedence over another floor', () {
+    final bookmarks = [
+      BookmarkItem(id: 1, topicId: 10, postId: 23, title: '', excerpt: ''),
+      BookmarkItem(id: 2, topicId: 10, postId: 22, title: '', excerpt: ''),
+    ];
+    expect(bookmarkIdForPost(bookmarks, 22, 10), 2);
+    expect(bookmarkIdForPost(bookmarks, 24, 10), isNull);
+  });
+
+  test('topic bookmark is used only if no exact post bookmark exists', () {
+    final bookmarks = [
+      BookmarkItem(id: 1, topicId: 10, postId: null, title: '', excerpt: ''),
+      BookmarkItem(id: 2, topicId: 10, postId: 22, title: '', excerpt: ''),
+    ];
+    expect(bookmarkIdForPost(bookmarks, 22, 10), 2);
+    expect(bookmarkIdForPost(bookmarks, 24, 10), 1);
   });
 }
