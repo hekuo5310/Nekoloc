@@ -214,6 +214,32 @@ class ReactionInfo {
   );
 }
 
+/// 举报理由由站点提供；管理员可以添加或调整理由及其顺序。
+class PostFlagReason {
+  final int id;
+  final String name;
+  final bool requireMessage;
+  final int position;
+
+  PostFlagReason({required this.id, required this.name,
+      required this.requireMessage, required this.position});
+
+  static PostFlagReason? fromJson(dynamic value, {String? username}) {
+    if (value is! Map) return null;
+    final id = toInt(value['id']);
+    final appliesTo = value['applies_to'];
+    if (id == null || value['is_flag'] != true || value['enabled'] == false ||
+        appliesTo is! List || !appliesTo.contains('Post')) return null;
+    var name = (value['name'] ?? value['short_description'])?.toString() ?? '';
+    if (name.contains('%{username}') && (username == null || username.isEmpty)) return null;
+    name = name.replaceAll('%{username}', username ?? '').trim();
+    if (name.isEmpty) return null;
+    return PostFlagReason(id: id, name: name,
+        requireMessage: value['require_message'] == true,
+        position: toInt(value['position']) ?? 0);
+  }
+}
+
 class Post {
   final int id;
   final int postNumber;
@@ -332,6 +358,7 @@ class TopicDetail {
   final DateTime? createdAt;
   final List<Post> posts;
   final List<int> stream;
+  final List<String> tags;
 
   TopicDetail({
     required this.id,
@@ -347,6 +374,7 @@ class TopicDetail {
     this.createdAt,
     required this.posts,
     required this.stream,
+    this.tags = const [],
   });
 
   factory TopicDetail.fromJson(dynamic json) {
@@ -365,6 +393,7 @@ class TopicDetail {
       createdAt: toDate(json['created_at']),
       posts: ((ps['posts'] as List?) ?? []).map((e) => Post.fromJson(e)).toList(),
       stream: ((ps['stream'] as List?) ?? []).map((e) => toInt(e) ?? 0).toList(),
+      tags: ((json['tags'] as List?) ?? []).whereType<String>().toList(),
     );
   }
 }

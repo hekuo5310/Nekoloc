@@ -248,6 +248,36 @@ class DiscourseApi {
     return TopicListResult.fromJson(d);
   }
 
+  /// 与官方客户端一致：标签话题列表复用 topic_list 响应。
+  Future<TopicListResult> tagTopics(String tag, {int page = 0}) async {
+    final d = await _getJson('/tag/${Uri.encodeComponent(tag)}.json',
+        query: {'page': page});
+    return TopicListResult.fromJson(d);
+  }
+
+  Future<List<PostFlagReason>> postFlagReasons({String? username}) async {
+    final site = await _getJson('/site.json');
+    final reasons = <PostFlagReason>[];
+    for (final entry in (site['post_action_types'] as List?) ?? []) {
+      final reason = PostFlagReason.fromJson(entry, username: username);
+      if (reason != null) reasons.add(reason);
+    }
+    reasons.sort((a, b) => a.position.compareTo(b.position));
+    return reasons;
+  }
+
+  Future<void> flagPost(int postId, PostFlagReason reason, String message) async {
+    if (reason.requireMessage && message.trim().isEmpty) {
+      throw ArgumentError.value(message, 'message', '此举报理由需要说明');
+    }
+    await _mutate('POST', '/post_actions', data: {
+      'id': postId.toString(),
+      'post_action_type_id': reason.id.toString(),
+      'flag_topic': 'false',
+      if (message.trim().isNotEmpty) 'message': message.trim(),
+    });
+  }
+
   /// categories（含子分类，展平后返回）
   /// 注：Discourse 中顶级分类通常只是容器，实际发帖发生在子分类
   Future<List<Category>> categories({bool includeSubcategories = true}) async {

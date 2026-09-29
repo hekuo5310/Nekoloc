@@ -26,7 +26,7 @@ jobs:
           channel: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      - run: flutter test test/models_test.dart test/topic_links_test.dart
+      - run: flutter test
 
   # ============================================================ Android
   android:
@@ -222,6 +222,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare release notes
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          tag = os.environ['GITHUB_REF_NAME']
+          changelog = Path('CHANGELOG.md').read_text()
+          heading = f'## [{tag}]'
+          section = next((part for part in changelog.split('\n---\n')
+                          if part.strip().startswith(heading)), None)
+          if section is None:
+              raise SystemExit(f'Missing changelog entry for {tag}')
+          Path('release_notes.md').write_text(section.strip() + '\n')
+          PY
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -232,5 +250,5 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release_notes.md
           files: dist/*

@@ -26,6 +26,31 @@ void main() {
     expect(topic.posts.single.canEdit, isTrue);
   });
 
+  test('topic tags preserve their display names', () {
+    final topic = TopicDetail.fromJson({
+      'id': 10, 'title': 'tagged', 'tags': ['Flutter', '讨论'],
+      'post_stream': {'posts': [], 'stream': []},
+    });
+    expect(topic.tags, ['Flutter', '讨论']);
+  });
+
+  test('flag reasons come from enabled post reasons and require a note when configured', () {
+    final entries = [
+      {'id': 2, 'name': 'like', 'is_flag': false, 'applies_to': ['Post']},
+      {'id': 3, 'name': 'chat', 'is_flag': true, 'applies_to': ['ChatMessage']},
+      {'id': 4, 'name': 'custom', 'is_flag': true, 'enabled': false, 'applies_to': ['Post']},
+      {'id': 5, 'name': '联系 @%{username}', 'is_flag': true,
+       'applies_to': ['Post'], 'require_message': true, 'position': 2},
+    ];
+    expect(entries.map(PostFlagReason.fromJson).whereType<PostFlagReason>(), isEmpty);
+    final parsed = entries.map((entry) => PostFlagReason.fromJson(entry, username: 'alice'))
+        .whereType<PostFlagReason>().toList();
+    expect(parsed, hasLength(1));
+    expect(parsed.single.name, '联系 @alice');
+    expect(parsed.single.requireMessage, isTrue);
+    expect(parsed.single.position, 2);
+  });
+
   test('exact post bookmark takes precedence over another floor', () {
     final bookmarks = [
       BookmarkItem(id: 1, topicId: 10, postId: 23, title: '', excerpt: ''),

@@ -14,6 +14,7 @@ import '../util.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import 'composer_screen.dart';
+import 'tag_topics_screen.dart';
 
 /// 提取 HTML 中所有 http(s) 图片地址（供全屏查看器翻页）
 List<String> _extractImages(String cookedHtml) {
@@ -150,6 +151,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         createdAt: d.createdAt,
         posts: posts,
         stream: d.stream,
+        tags: d.tags,
       );
 
   Future<void> _toggleLike(Post post) async {
@@ -363,6 +365,29 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
+  Future<void> _reportPost(Post post) async {
+    final app = context.read<AppState>();
+    if (!app.isLoggedIn) {
+      _hint('请先登录');
+      return;
+    }
+    try {
+      final reasons = await app.api.postFlagReasons(username: post.username);
+      if (!mounted) return;
+      if (reasons.isEmpty) {
+        _hint('站点暂未提供可用的举报理由');
+        return;
+      }
+      final sent = await showDialog<bool>(
+        context: context,
+        builder: (_) => _ReportPostDialog(postId: post.id, reasons: reasons),
+      );
+      if (sent == true) _hint('举报已提交');
+    } catch (e) {
+      _hint('获取举报理由失败：$e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final d = _detail;
@@ -474,6 +499,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                 onChanged: _load,
                                 onEdit: d.posts.first.canEdit
                                     ? () => _editPost(d.posts.first) : null,
+                                onReport: () => _reportPost(d.posts.first),
                               ),
                             ],
                           );
@@ -519,6 +545,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                           onChanged: _load,
                           onEdit: post.canEdit
                               ? () => _editPost(post) : null,
+                          onReport: () => _reportPost(post),
                         );
                       },
                     ),
@@ -547,6 +574,22 @@ class _TopicHeader extends StatelessWidget {
                   fontSize: 17.5, fontWeight: FontWeight.w800, height: 1.4),
             ),
             const SizedBox(height: 8),
+            if (detail.tags.isNotEmpty) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final tag in detail.tags)
+                    ActionChip(
+                      label: Text('#$tag'),
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => TagTopicsScreen(tag: tag),
+                      )),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             Row(
               children: [
                 Icon(Icons.visibility, size: 13, color: muted),
@@ -575,6 +618,92 @@ class _TopicHeader extends StatelessWidget {
   }
 }
 
+class _ReportPostDialog extends StatefulWidget {
+  final int postId;
+  final List<PostFlagReason> reasons;
+  const _ReportPostDialog({required this.postId, required this.reasons});
+
+  @override
+  State<_ReportPostDialog> createState() => _ReportPostDialogState();
+}
+
+class _ReportPostDialogState extends State<_ReportPostDialog> {
+  final _note = TextEditingController();
+  PostFlagReason? _selected;
+  bool _sending = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final reason = _selected;
+    if (reason == null || _sending ||
+        (reason.requireMessage && _note.text.trim().isEmpty)) return;
+    setState(() { _sending = true; _error = null; });
+    try {
+      await context.read<AppState>().api.flagPost(widget.postId, reason, _note.text);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('举报帖子'),
+    content: SizedBox(
+      width: 400,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final reason in widget.reasons)
+              RadioListTile<int>(
+                dense: true,
+                title: Text(reason.name),
+                value: reason.id,
+                groupValue: _selected?.id,
+                onChanged: _sending ? null : (_) => setState(() {
+                  _selected = reason;
+                  _note.clear();
+                }),
+              ),
+            if (_selected?.requireMessage == true)
+              TextField(
+                controller: _note,
+                maxLines: 3,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: '补充说明（必填）',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            if (_error != null)
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(onPressed: _sending ? null : () => Navigator.pop(context),
+          child: const Text('取消')),
+      FilledButton(
+        onPressed: _selected == null || _sending ||
+            (_selected!.requireMessage && _note.text.trim().isEmpty)
+            ? null : _submit,
+        child: Text(_sending ? '提交中…' : '提交举报'),
+      ),
+    ],
+  );
+}
+
 /// 单个楼层
 class _PostCard extends StatelessWidget {
   final Post post;
@@ -585,6 +714,7 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onCopyLink;
   final VoidCallback onChanged;
   final VoidCallback? onEdit;
+  final VoidCallback onReport;
 
   const _PostCard({
     required this.post,
@@ -595,6 +725,7 @@ class _PostCard extends StatelessWidget {
     required this.onCopyLink,
     required this.onChanged,
     this.onEdit,
+    required this.onReport,
   });
 
   Future<void> _openAvatarLink(String url) async {
@@ -751,11 +882,13 @@ class _PostCard extends StatelessWidget {
                   onSelected: (v) {
                     if (v == 'copy') onCopyLink();
                     if (v == 'edit') onEdit?.call();
+                    if (v == 'report') onReport();
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'copy', child: Text('复制楼层链接')),
                     if (onEdit != null)
                       const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
+                    const PopupMenuItem(value: 'report', child: Text('举报帖子')),
                   ],
                   icon: Icon(Icons.more_horiz, size: 20, color: muted),
                 ),
