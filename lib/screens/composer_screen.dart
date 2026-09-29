@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +18,7 @@ class ComposerScreen extends StatefulWidget {
   final String? hint;
   final int? editPostId;
   final String? initialRaw;
+  final String? initialRecipients;
 
   const ComposerScreen({
     super.key,
@@ -25,6 +29,7 @@ class ComposerScreen extends StatefulWidget {
     this.hint,
     this.editPostId,
     this.initialRaw,
+    this.initialRecipients,
   });
 
   @override
@@ -32,6 +37,7 @@ class ComposerScreen extends StatefulWidget {
 }
 
 class _ComposerScreenState extends State<ComposerScreen> {
+  late final AppState _app;
   final _titleCtrl = TextEditingController();
   final _contentCtrl = TextEditingController();
   final _contentFocus = FocusNode();
@@ -43,11 +49,31 @@ class _ComposerScreenState extends State<ComposerScreen> {
   bool _busy = false;
   bool _uploading = false;
   String? _error;
+  String? _draftKey;
+  Timer? _draftTimer;
+  bool _submitted = false;
 
   @override
   void initState() {
     super.initState();
+    _app = context.read<AppState>();
     _contentCtrl.text = widget.initialRaw ?? '';
+    _recipientsCtrl.text = widget.initialRecipients ?? '';
+    if (widget.editPostId == null) {
+      final userId = _app.user?.id;
+      if (userId != null) {
+        final contextKey = widget.isPrivateMessage
+            ? 'message_${widget.initialRecipients ?? 'new'}'
+            : widget.isNewTopic
+                ? 'topic'
+                : 'reply_${widget.topicId}_${widget.replyToPostNumber ?? 0}';
+        _draftKey = 'composer_draft_${userId}_$contextKey';
+        _restoreDraft(_app);
+        _titleCtrl.addListener(_scheduleDraft);
+        _contentCtrl.addListener(_scheduleDraft);
+        _recipientsCtrl.addListener(_scheduleDraft);
+      }
+    }
     if (widget.isNewTopic) {
       _loadCategories();
     }
@@ -55,11 +81,51 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
+    _saveDraft();
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     _contentFocus.dispose();
     _recipientsCtrl.dispose();
     super.dispose();
+  }
+
+  void _restoreDraft(AppState app) {
+    final stored = app.prefs.getString(_draftKey!);
+    if (stored == null) return;
+    try {
+      final draft = jsonDecode(stored);
+      if (draft is! Map) return;
+      _titleCtrl.text = draft['title']?.toString() ?? '';
+      _contentCtrl.text = draft['raw']?.toString() ?? '';
+      _recipientsCtrl.text = draft['recipients']?.toString() ??
+          widget.initialRecipients ?? '';
+      _selectedCategory = toInt(draft['category']);
+    } catch (_) {
+      // An old or corrupted local draft must not block the composer.
+    }
+  }
+
+  void _scheduleDraft() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 400), _saveDraft);
+  }
+
+  void _saveDraft() {
+    final key = _draftKey;
+    if (key == null || _submitted) return;
+    final prefs = _app.prefs;
+    if (_titleCtrl.text.trim().isEmpty && _contentCtrl.text.trim().isEmpty &&
+        _recipientsCtrl.text.trim().isEmpty) {
+      prefs.remove(key);
+    } else {
+      prefs.setString(key, jsonEncode({
+        'title': _titleCtrl.text,
+        'raw': _contentCtrl.text,
+        'recipients': _recipientsCtrl.text,
+        'category': _selectedCategory,
+      }));
+    }
   }
 
   Future<void> _loadCategories() async {
@@ -77,6 +143,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       setState(() {
         _categories = usable;
         _parentNames = parents;
+        if (!usable.any((c) => c.id == _selectedCategory)) _selectedCategory = null;
       });
     } catch (_) {}
   }
@@ -212,6 +279,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
         );
       }
       if (!mounted) return;
+      _submitted = true;
+      _draftTimer?.cancel();
+      if (_draftKey != null) await app.prefs.remove(_draftKey!);
+      if (!mounted) return;
       Navigator.pop(context, true);
       final topicId = int.tryParse('${result['topic_id'] ?? widget.topicId}');
       if ((widget.isNewTopic || widget.isPrivateMessage) &&
@@ -337,7 +408,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
                             ),
                           ),
                       ],
-                      onChanged: (v) => setState(() => _selectedCategory = v),
+                      onChanged: (v) {
+                        setState(() => _selectedCategory = v);
+                        _scheduleDraft();
+                      },
                     ),
                   const SizedBox(height: 12),
                 ],
@@ -353,6 +427,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   style: const TextStyle(fontSize: 14.5, height: 1.5),
                 ),
                 const SizedBox(height: 10),
+                if (_draftKey != null)
+                  Text('草稿自动保存在本机',
+                    style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
                 Row(
                   children: [
                     OutlinedButton.icon(
