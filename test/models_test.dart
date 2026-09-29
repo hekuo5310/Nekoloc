@@ -51,6 +51,31 @@ void main() {
     expect(parsed.single.position, 2);
   });
 
+  test('voting fields are optional and preserve server permission', () {
+    final post = Post.fromJson({
+      'id': 12, 'post_number': 2, 'username': 'alice',
+      'vote_score': -3, 'vote_direction': 'down', 'can_vote_down': true,
+    });
+    expect(post.voteScore, -3);
+    expect(post.voteDirection, 'down');
+    expect(post.canVoteDown, isTrue);
+    expect(post.copyWith(voteScore: -2, voteDirection: 'none').voteDirection, 'none');
+    expect(Post.fromJson({'id': 13, 'post_number': 3}).voteScore, isNull);
+  });
+
+  test('public profile uses server follow and ignore capabilities', () {
+    final profile = UserProfile.fromJson({
+      'username': 'alice', 'can_follow': true, 'is_followed': true,
+      'total_followers': 42, 'ignored_usernames': ['bob'],
+      'can_ignore_users': true,
+    });
+    expect(profile.canFollow, isTrue);
+    expect(profile.isFollowed, isTrue);
+    expect(profile.totalFollowers, 42);
+    expect(profile.ignoredUsernames, ['bob']);
+    expect(profile.canIgnoreUsers, isTrue);
+  });
+
   test('exact post bookmark takes precedence over another floor', () {
     final bookmarks = [
       BookmarkItem(id: 1, topicId: 10, postId: 23, title: '', excerpt: ''),

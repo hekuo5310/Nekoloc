@@ -259,6 +259,9 @@ class Post {
   final List<ReactionInfo> reactions;
   final String? currentUserReaction;
   final int reactionUsersCount;
+  final int? voteScore;
+  final String? voteDirection;
+  final bool canVoteDown;
 
   Post({
     required this.id,
@@ -279,6 +282,9 @@ class Post {
     this.reactions = const [],
     this.currentUserReaction,
     this.reactionUsersCount = 0,
+    this.voteScore,
+    this.voteDirection,
+    this.canVoteDown = false,
   });
 
   factory Post.fromJson(dynamic json) {
@@ -311,6 +317,9 @@ class Post {
           .toList(),
       currentUserReaction: json['current_user_reaction']?.toString(),
       reactionUsersCount: toInt(json['reaction_users_count']) ?? 0,
+      voteScore: toInt(json['vote_score']),
+      voteDirection: json['vote_direction']?.toString(),
+      canVoteDown: toBool(json['can_vote_down']),
     );
   }
 
@@ -322,6 +331,9 @@ class Post {
     List<ReactionInfo>? reactions,
     String? currentUserReaction,
     int? reactionUsersCount,
+    int? voteScore,
+    String? voteDirection,
+    bool? canVoteDown,
   }) => Post(
         id: id,
         postNumber: postNumber,
@@ -341,6 +353,9 @@ class Post {
         reactions: reactions ?? this.reactions,
         currentUserReaction: currentUserReaction ?? this.currentUserReaction,
         reactionUsersCount: reactionUsersCount ?? this.reactionUsersCount,
+        voteScore: voteScore ?? this.voteScore,
+        voteDirection: voteDirection ?? this.voteDirection,
+        canVoteDown: canVoteDown ?? this.canVoteDown,
       );
 }
 
@@ -487,6 +502,11 @@ class UserProfile {
   final DateTime? lastSeenAt;
   final String? location;
   final String? website;
+  final bool canFollow;
+  final bool isFollowed;
+  final int? totalFollowers;
+  final List<String> ignoredUsernames;
+  final bool canIgnoreUsers;
 
   UserProfile({
     required this.username,
@@ -500,6 +520,11 @@ class UserProfile {
     this.lastSeenAt,
     this.location,
     this.website,
+    this.canFollow = false,
+    this.isFollowed = false,
+    this.totalFollowers,
+    this.ignoredUsernames = const [],
+    this.canIgnoreUsers = false,
   });
 
   factory UserProfile.fromJson(dynamic json) => UserProfile(
@@ -514,6 +539,12 @@ class UserProfile {
         lastSeenAt: toDate(json['last_seen_at']),
         location: json['location']?.toString(),
         website: json['website']?.toString(),
+        canFollow: toBool(json['can_follow']),
+        isFollowed: toBool(json['is_followed']),
+        totalFollowers: toInt(json['total_followers']),
+        ignoredUsernames: ((json['ignored_usernames'] as List?) ?? [])
+            .whereType<String>().toList(),
+        canIgnoreUsers: toBool(json['can_ignore_users']),
       );
 }
 

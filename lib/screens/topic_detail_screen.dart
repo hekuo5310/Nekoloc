@@ -15,6 +15,7 @@ import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
 import 'composer_screen.dart';
 import 'tag_topics_screen.dart';
+import 'public_profile_screen.dart';
 
 /// 提取 HTML 中所有 http(s) 图片地址（供全屏查看器翻页）
 List<String> _extractImages(String cookedHtml) {
@@ -40,6 +41,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   bool _loading = true;
   bool _loadingMore = false;
   bool _likingBusy = false;
+  int? _votingPostId;
   bool _bookmarkBusy = false;
   bool _notificationBusy = false;
   final _scroll = ScrollController();
@@ -157,6 +159,37 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   Future<void> _toggleLike(Post post) async {
     // 心=等价于 like，走 reactions 接口
     await _toggleReaction(post, 'heart');
+  }
+
+  Future<void> _vote(Post post, String direction) async {
+    final app = context.read<AppState>();
+    if (!app.isLoggedIn) {
+      _hint('请先登录');
+      return;
+    }
+    if (_votingPostId != null) return;
+    setState(() => _votingPostId = post.id);
+    try {
+      final target = post.voteDirection == direction ? 'none' : direction;
+      final result = await app.api.castPostVote(post.id, target);
+      if (!mounted || _detail == null) return;
+      final d = _detail!;
+      final index = d.posts.indexWhere((p) => p.id == post.id);
+      if (index >= 0) {
+        final posts = [...d.posts];
+        posts[index] = post.copyWith(
+          voteScore: toInt(result['vote_score']) ?? post.voteScore,
+          voteDirection: result['vote_direction']?.toString() ?? target,
+          canVoteDown: result.containsKey('can_vote_down')
+              ? result['can_vote_down'] == true : post.canVoteDown,
+        );
+        setState(() => _detail = _copyWithPosts(d, posts));
+      }
+    } catch (e) {
+      _hint('投票失败：$e');
+    } finally {
+      if (mounted) setState(() => _votingPostId = null);
+    }
   }
 
   /// 切换表情反应（discourse-reactions 插件）
@@ -500,6 +533,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                 onEdit: d.posts.first.canEdit
                                     ? () => _editPost(d.posts.first) : null,
                                 onReport: () => _reportPost(d.posts.first),
+                                onVote: (direction) => _vote(d.posts.first, direction),
+                                voting: _votingPostId == d.posts.first.id,
                               ),
                             ],
                           );
@@ -546,6 +581,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                           onEdit: post.canEdit
                               ? () => _editPost(post) : null,
                           onReport: () => _reportPost(post),
+                          onVote: (direction) => _vote(post, direction),
+                          voting: _votingPostId == post.id,
                         );
                       },
                     ),
@@ -715,6 +752,8 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback? onEdit;
   final VoidCallback onReport;
+  final ValueChanged<String> onVote;
+  final bool voting;
 
   const _PostCard({
     required this.post,
@@ -726,6 +765,8 @@ class _PostCard extends StatelessWidget {
     required this.onChanged,
     this.onEdit,
     required this.onReport,
+    required this.onVote,
+    required this.voting,
   });
 
   Future<void> _openAvatarLink(String url) async {
@@ -845,14 +886,19 @@ class _PostCard extends StatelessWidget {
                       Row(
                         children: [
                           Flexible(
-                            child: Text(
-                              post.username,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: scheme.primary,
+                            child: InkWell(
+                              onTap: () => Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => PublicProfileScreen(username: post.username),
+                              )),
+                              child: Text(
+                                post.username,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.primary,
+                                ),
                               ),
                             ),
                           ),
@@ -899,6 +945,22 @@ class _PostCard extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
+                if (post.voteScore != null) ...[
+                  IconButton(
+                    tooltip: post.voteDirection == 'up' ? '撤回赞成票' : '赞成',
+                    onPressed: voting ? null : () => onVote('up'),
+                    icon: Icon(post.voteDirection == 'up'
+                        ? Icons.arrow_circle_up : Icons.arrow_circle_up_outlined),
+                  ),
+                  Text('${post.voteScore}', style: const TextStyle(fontSize: 13)),
+                  IconButton(
+                    tooltip: post.voteDirection == 'down' ? '撤回反对票' : '反对',
+                    onPressed: voting || (!post.canVoteDown && post.voteDirection != 'down')
+                        ? null : () => onVote('down'),
+                    icon: Icon(post.voteDirection == 'down'
+                        ? Icons.arrow_circle_down : Icons.arrow_circle_down_outlined),
+                  ),
+                ],
                 // 表情反应区：单击 toggle 心、长按打开选择器
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,

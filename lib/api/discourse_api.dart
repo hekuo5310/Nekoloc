@@ -278,6 +278,14 @@ class DiscourseApi {
     });
   }
 
+  /// discourse-vote: direction 是目标状态（up / down / none）。
+  Future<Map<String, dynamic>> castPostVote(int postId, String direction) {
+    if (!const {'up', 'down', 'none'}.contains(direction)) {
+      throw ArgumentError.value(direction, 'direction');
+    }
+    return _mutate('PUT', '/vote/posts/$postId', data: {'direction': direction});
+  }
+
   /// categories（含子分类，展平后返回）
   /// 注：Discourse 中顶级分类通常只是容器，实际发帖发生在子分类
   Future<List<Category>> categories({bool includeSubcategories = true}) async {
@@ -404,8 +412,23 @@ class DiscourseApi {
   // ---------------------------------------------------------------- 用户
 
   Future<UserProfile> userProfile(String username) async {
-    final d = await _getJson('/u/$username.json');
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}.json');
     return UserProfile.fromJson(d['user'] ?? const {});
+  }
+
+  Future<void> followUser(String username) =>
+      _mutate('PUT', '/follow/${Uri.encodeComponent(username)}').then((_) {});
+
+  Future<void> unfollowUser(String username) =>
+      _mutate('DELETE', '/follow/${Uri.encodeComponent(username)}').then((_) {});
+
+  /// Discourse 要求忽略用户时携带到期时间；恢复使用 normal 级别。
+  Future<void> setUserIgnored(String username, bool ignored) async {
+    await _mutate('PUT', '/u/${Uri.encodeComponent(username)}/notification_level', data: {
+      'notification_level': ignored ? 'ignore' : 'normal',
+      if (ignored) 'expiring_at': DateTime.now().toUtc()
+          .add(const Duration(days: 3650)).toIso8601String(),
+    });
   }
 
   Future<TopicListResult> userTopics(String username, {int page = 0}) async {
