@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Nekoloc 平台补丁脚本（在 CI 中 `flutter create .` 生成平台目录后运行）：
-- Android: INTERNET 权限、应用名称、图标
+- Android: applicationId、INTERNET 权限、应用名称、图标
 - iOS:     显示名称、Bundle ID、图标
 - macOS:   网络权限（沙盒）、产品名称、图标
 - Windows: 应用名称
 - Linux:   窗口标题
-所有步骤独立容错，单项失败不影响整体构建。
+包名配置必须成功；其余步骤独立容错。
 """
 import json
 import os
@@ -22,6 +22,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 APP_LABEL = 'Nekoloc'
 PROJECT_NAME = 'nodeloc_app'
+ANDROID_PACKAGE = 'net.zerexa.nekoloc'
 BUNDLE_ID = 'com.nodeloc.app'
 
 
@@ -51,6 +52,41 @@ def step(name):
 
 
 # ---------------------------------------------------------------- Android
+
+def patch_android_package():
+    # applicationId is the public app identity. Keep the generated Kotlin
+    # namespace and point the launcher at its fully qualified class.
+    if not os.path.isdir('android'):
+        return
+    for p in ['android/app/build.gradle.kts', 'android/app/build.gradle']:
+        m = read(p)
+        if m is None:
+            continue
+        namespace = re.search(r'\bnamespace\s*(?:=\s*)?[\"\']([^\"\']+)[\"\']', m)
+        if namespace is None:
+            raise ValueError('Android namespace 未找到，无法配置启动 Activity')
+        m, count = re.subn(
+            r'\bapplicationId\s*(?:=\s*)?([\"\'])[^\"\']+\1',
+            lambda match: f'applicationId = "{ANDROID_PACKAGE}"'
+                if p.endswith('.kts') else f'applicationId "{ANDROID_PACKAGE}"', m,
+        )
+        if count != 1:
+            raise ValueError('Android applicationId 配置缺失或不唯一')
+        manifest_path = 'android/app/src/main/AndroidManifest.xml'
+        manifest = read(manifest_path)
+        if manifest is None:
+            raise FileNotFoundError(manifest_path)
+        activity = namespace.group(1) + '.MainActivity'
+        manifest = manifest.replace('android:name=".MainActivity"',
+                                    f'android:name="{activity}"')
+        if f'android:name="{activity}"' not in manifest:
+            raise ValueError('Android MainActivity 配置与生成的 namespace 不一致')
+        write(p, m)
+        write(manifest_path, manifest)
+        print(f'[OK] Android applicationId = {ANDROID_PACKAGE}')
+        return
+    raise FileNotFoundError('android/app/build.gradle(.kts)')
+
 
 @step('Android Manifest（INTERNET 权限 + 应用名）')
 def patch_android():
@@ -232,6 +268,7 @@ def make_icons():
 if __name__ == '__main__':
     only = sys.argv[1] if len(sys.argv) > 1 else None
     jobs = {
+        'android-package': patch_android_package,
         'android': patch_android,
         'android-gradle': patch_android_gradle,
         'ios': patch_ios,

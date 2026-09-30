@@ -6,6 +6,23 @@ Nekoloc（前身 NodeLoc APP）—— [NodeLoc](https://www.nodeloc.com) 第三�
 
 ---
 
+## [v1.3.6] — 2026-09-30 · Android 软件包名称调整
+
+### 新功能：使用 Zerexa 域名对应的包名
+
+- **Android 包名**：软件包名称调整为 `net.zerexa.nekoloc`，适用于 APK 安装及 Google Play 的 AAB 上传
+- **安装身份**：新包名会被 Android 识别为另一个应用；旧包名版本的登录状态、本机设置和草稿不会自动迁移
+
+### 内部改进
+
+- 平台生成后统一配置 Android `applicationId`，明确启动 Activity 的完整类名
+- 包名配置失败时终止构建，避免静默产出旧包名的安装包
+- CI 检查通用及三种架构 APK 的实际包名，版本号更新为 1.3.6
+
+**详细对比**：[v1.3.5...v1.3.6](https://github.com/hekuo5310/Nekoloc/compare/v1.3.5...v1.3.6)
+
+---
+
 ## [v1.3.5] — 2026-09-30 · 投票与写作工具
 
 ### 新功能：帖子投票与编辑体验

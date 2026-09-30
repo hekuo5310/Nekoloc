@@ -62,6 +62,29 @@ jobs:
       - name: Build App Bundle
         run: flutter build appbundle --release
 
+      - name: Verify Android package name
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          sdk = Path(os.environ.get('ANDROID_HOME') or os.environ['ANDROID_SDK_ROOT'])
+          tools = sorted(sdk.glob('build-tools/*/aapt'))
+          if not tools:
+              raise SystemExit('Android aapt not found')
+          apks = sorted(Path('build/app/outputs/flutter-apk').glob('app*.apk'))
+          if len(apks) != 4:
+              raise SystemExit(f'Expected four release APKs, got {len(apks)}')
+          for apk in apks:
+              output = subprocess.check_output([str(tools[-1]), 'dump', 'badging', str(apk)], text=True)
+              package = re.search(r"^package: name='([^']+)'", output, re.MULTILINE)
+              if package is None or package.group(1) != 'net.zerexa.nekoloc':
+                  raise SystemExit(f'Wrong package in {apk}')
+              print(f'{apk.name}: {package.group(1)}')
+          PY
+
       - name: Collect artifacts
         run: |
           mkdir -p dist

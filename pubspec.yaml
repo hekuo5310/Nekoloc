@@ -1,7 +1,7 @@
 name: nodeloc_app
 description: "Nekoloc —— NodeLoc 社区第三方猫咪主题全平台客户端（Android / iOS / Windows / macOS / Linux）"
 publish_to: "none"
-version: 1.3.5+10
+version: 1.3.6+11
 
 environment:
   sdk: ">=3.4.0 <4.0.0"

@@ -75,6 +75,8 @@ git push origin v1.2.1
 
 ## 本地开发
 
+Android 软件包名称（applicationId）：`net.zerexa.nekoloc`。生成平台工程后，必须运行下方的平台补丁步骤。
+
 ```bash
 # 1. 克隆
 git clone https://github.com/hekuo5310/Nekoloc.git
