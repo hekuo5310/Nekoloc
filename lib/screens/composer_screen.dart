@@ -4,9 +4,12 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../app_state.dart';
 import '../models.dart';
+import '../composer_tools.dart';
 import 'topic_detail_screen.dart';
 
 /// 发帖 / 回复 / 私信编辑器
@@ -52,6 +55,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   String? _draftKey;
   Timer? _draftTimer;
   bool _submitted = false;
+  bool _preview = false;
 
   @override
   void initState() {
@@ -159,7 +163,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       );
       final file = files.isNotEmpty ? files.single : null;
       final path = file?.path;
-      if (file == null || path == null) return;
+      if (!mounted || file == null || path == null) return;
 
       setState(() => _uploading = true);
       final resp = await app.api.uploadImage(
@@ -169,6 +173,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
           // 进度由 _uploading 状态与 snackbar 提示
         },
       );
+      if (!mounted) return;
       final shortUrl = resp['short_url']?.toString();
       final url = resp['url']?.toString();
       if (shortUrl == null && url == null) {
@@ -197,6 +202,32 @@ class _ComposerScreenState extends State<ComposerScreen> {
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  void _format(String before, String after, {String placeholder = '文字'}) {
+    _contentCtrl.value = wrapSelection(_contentCtrl.value, before, after,
+        placeholder: placeholder);
+    setState(() => _preview = false);
+    _contentFocus.requestFocus();
+  }
+
+  void _prefix(String prefix) {
+    _contentCtrl.value = prefixLines(_contentCtrl.value, prefix);
+    setState(() => _preview = false);
+    _contentFocus.requestFocus();
+  }
+
+  Future<void> _insertPoll() async {
+    final options = await showDialog<({List<String> options, bool multiple})>(
+      context: context, builder: (_) => const _PollBuilderDialog());
+    if (options == null || !mounted) return;
+    try {
+      final markup = buildPollMarkup(_contentCtrl.text, options.options,
+          multiple: options.multiple);
+      _format(markup, '', placeholder: '');
+    } on FormatException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -322,7 +353,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
-              onPressed: _busy ? null : _submit,
+              onPressed: _busy || _uploading ? null : _submit,
               child: _busy
                   ? const SizedBox(
                       width: 18,
@@ -415,6 +446,35 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     ),
                   const SizedBox(height: 12),
                 ],
+                Wrap(spacing: 2, children: [
+                  IconButton(tooltip: '粗体', onPressed: _busy ? null : () => _format('**', '**'), icon: const Icon(Icons.format_bold)),
+                  IconButton(tooltip: '斜体', onPressed: _busy ? null : () => _format('*', '*'), icon: const Icon(Icons.format_italic)),
+                  IconButton(tooltip: '删除线', onPressed: _busy ? null : () => _format('~~', '~~'), icon: const Icon(Icons.format_strikethrough)),
+                  IconButton(tooltip: '标题', onPressed: _busy ? null : () => _prefix('## '), icon: const Icon(Icons.title)),
+                  IconButton(tooltip: '引用', onPressed: _busy ? null : () => _prefix('> '), icon: const Icon(Icons.format_quote)),
+                  IconButton(tooltip: '列表', onPressed: _busy ? null : () => _prefix('- '), icon: const Icon(Icons.format_list_bulleted)),
+                  IconButton(tooltip: '代码块', onPressed: _busy ? null : () => _format('\n```\n', '\n```\n', placeholder: '代码'), icon: const Icon(Icons.code)),
+                  IconButton(tooltip: '链接', onPressed: _busy ? null : () => _format('[', '](https://)', placeholder: '链接文字'), icon: const Icon(Icons.link)),
+                  IconButton(tooltip: '插入投票', onPressed: _busy ? null : _insertPoll, icon: const Icon(Icons.poll_outlined)),
+                  TextButton.icon(onPressed: () => setState(() => _preview = !_preview),
+                    icon: Icon(_preview ? Icons.edit_outlined : Icons.visibility_outlined),
+                    label: Text(_preview ? '继续编辑' : '预览')),
+                ]),
+                if (_preview)
+                  Container(padding: const EdgeInsets.all(12),
+                    constraints: const BoxConstraints(minHeight: 220),
+                    decoration: BoxDecoration(border: Border.all(color: scheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(8)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Markdown 预览（投票等站点插件以发布后效果为准）',
+                        style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant)),
+                      const SizedBox(height: 12),
+                      HtmlWidget(md.markdownToHtml(_contentCtrl.text,
+                        extensionSet: md.ExtensionSet.gitHubFlavored),
+                        onTapUrl: (_) async => true),
+                    ]),
+                  )
+                else
                 TextField(
                   controller: _contentCtrl,
                   focusNode: _contentFocus,
@@ -433,7 +493,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                 Row(
                   children: [
                     OutlinedButton.icon(
-                      onPressed: _uploading ? null : _pickAndUploadImage,
+                      onPressed: _busy || _uploading ? null : _pickAndUploadImage,
                       style: OutlinedButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                       ),
@@ -474,4 +534,41 @@ class _ComposerScreenState extends State<ComposerScreen> {
       ),
     );
   }
+}
+
+class _PollBuilderDialog extends StatefulWidget {
+  const _PollBuilderDialog();
+  @override
+  State<_PollBuilderDialog> createState() => _PollBuilderDialogState();
+}
+class _PollBuilderDialogState extends State<_PollBuilderDialog> {
+  final _options = TextEditingController();
+  bool _multiple = false;
+  String? _error;
+  @override
+  void dispose() { _options.dispose(); super.dispose(); }
+  void _insert() {
+    final options = _options.text.split('\n').map((o) => o.trim()).where((o) => o.isNotEmpty).toList();
+    try {
+      buildPollMarkup('', options, multiple: _multiple);
+      Navigator.pop(context, (options: options, multiple: _multiple));
+    } on FormatException catch (e) { setState(() => _error = e.message); }
+  }
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('插入投票'),
+    content: SizedBox(width: 400, child: SingleChildScrollView(child: Column(
+      mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: _options, minLines: 4, maxLines: 8,
+          decoration: const InputDecoration(labelText: '每行一个选项（2–20 项）')),
+        CheckboxListTile(value: _multiple, title: const Text('允许多选'),
+          onChanged: (v) => setState(() => _multiple = v ?? false)),
+        if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ],
+    ))),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+      FilledButton(onPressed: _insert, child: const Text('插入正文')),
+    ],
+  );
 }

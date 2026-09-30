@@ -13,6 +13,7 @@ import '../theme.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/poll_card.dart';
 import 'composer_screen.dart';
 import 'tag_topics_screen.dart';
 import 'public_profile_screen.dart';
@@ -44,6 +45,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   int? _votingPostId;
   bool _bookmarkBusy = false;
   bool _notificationBusy = false;
+  final Set<String> _pollBusy = {};
   final _scroll = ScrollController();
   DateTime _openedAt = DateTime.now();
   int _reportedPosts = 0;
@@ -129,9 +131,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       final more =
           await context.read<AppState>().api.topicPosts(widget.topicId, nextIds);
       if (!mounted) return;
-      final merged = [...d.posts, ...more.where((p) => !loaded.contains(p.id))]
+      final latest = _detail ?? d;
+      final currentIds = latest.posts.map((p) => p.id).toSet();
+      final merged = [...latest.posts, ...more.where((p) => !currentIds.contains(p.id))]
         ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
-      setState(() => _detail = _copyWithPosts(d, merged));
+      setState(() => _detail = _copyWithPosts(latest, merged));
     } catch (e) {
       _hint('加载楼层失败：$e');
     } finally {
@@ -219,38 +223,83 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
-  /// 收藏 / 取消收藏（作用于首帖）
-  Future<void> _toggleBookmark() async {
+  Future<void> _pollVote(Post post, PostPoll poll, List<String>? options) async {
+    final app = context.read<AppState>();
+    final key = '${post.id}:${poll.name}';
+    if (!app.isLoggedIn) { _hint('请先登录'); return; }
+    if (_pollBusy.contains(key) || !poll.canVote) return;
+    if (options != null && !poll.validSelection(options.toSet())) {
+      _hint('请选择 ${poll.minimum}–${poll.maximum} 项'); return;
+    }
+    setState(() => _pollBusy.add(key));
+    try {
+      final result = options == null
+          ? await app.api.removePollVote(post.id, poll.name)
+          : await app.api.votePoll(post.id, poll.name, options);
+      if (!mounted) return;
+      // If a plugin version omits its state, fetch server truth instead of
+      // guessing hidden results or claiming that a vote succeeded locally.
+      if (result.poll == null || result.vote == null) {
+        await _load();
+        return;
+      }
+      final d = _detail;
+      if (d == null) return;
+      final posts = d.posts.map((p) => p.id != post.id ? p : p.copyWith(
+        polls: p.polls.map((item) => item.name == poll.name ? result.poll! : item).toList(),
+        pollsVotes: {...p.pollsVotes, poll.name: result.vote!},
+      )).toList();
+      setState(() => _detail = _copyWithPosts(d, posts));
+    } catch (e) {
+      _hint('投票操作失败：$e');
+    } finally {
+      if (mounted) setState(() => _pollBusy.remove(key));
+    }
+  }
+
+  /// 首帖工具栏和逐楼菜单共用同一收藏状态。
+  Future<void> _toggleBookmark([Post? target]) async {
     final app = context.read<AppState>();
     final d = _detail;
     if (d == null || d.posts.isEmpty) return;
-    if (!app.isLoggedIn) {
-      _hint('请先登录');
-      return;
-    }
+    if (!app.isLoggedIn) { _hint('请先登录'); return; }
     if (_bookmarkBusy) return;
+    final post = target ?? d.posts.first;
     setState(() => _bookmarkBusy = true);
-    final first = d.posts.first;
+    int? newId;
     try {
-      if (first.bookmarked) {
-        // 无 bookmark_id 时先查收藏列表定位
-        var bid = first.bookmarkId;
-        if (bid == null) {
-          final list = await app.api.bookmarks(app.user!.username);
-          bid = bookmarkIdForPost(list, first.id, d.id);
-          if (bid == null) throw ApiException('找不到此话题的收藏记录，请刷新后重试');
+      if (post.bookmarked) {
+        var bid = post.bookmarkId;
+        var page = 0;
+        int? topicBookmarkId;
+        final seen = <int>{};
+        while (bid == null) {
+          final list = await app.api.bookmarks(app.user!.username, page: page++);
+          final unseen = list.where((b) => seen.add(b.id)).toList();
+          bid = bookmarkIdForPost(unseen, post.id, d.id, allowTopicBookmark: false);
+          if (post.postNumber == 1) {
+            for (final bookmark in unseen) {
+              if (bookmark.postId == null && bookmark.topicId == d.id) {
+                topicBookmarkId ??= bookmark.id;
+              }
+            }
+          }
+          if (unseen.isEmpty) break;
         }
+        bid ??= topicBookmarkId;
+        if (bid == null) throw ApiException('找不到此楼层的收藏记录，请刷新后重试');
         await app.api.removeBookmark(bid);
       } else {
-        await app.api.addBookmark(first.id);
+        newId = await app.api.addBookmark(post.id);
       }
-      if (!mounted) return;
-      final posts = [...d.posts];
-      posts[0] = first.copyWith(
-        bookmarked: !first.bookmarked,
-      );
-      setState(() => _detail = _copyWithPosts(d, posts));
-      _hint(first.bookmarked ? '已取消收藏' : '已收藏');
+      if (!mounted || _detail == null) return;
+      final latest = _detail!;
+      final posts = latest.posts.map((p) => p.id != post.id ? p : p.copyWith(
+        bookmarked: !post.bookmarked, bookmarkId: newId,
+        clearBookmarkId: post.bookmarked,
+      )).toList();
+      setState(() => _detail = _copyWithPosts(latest, posts));
+      _hint(post.bookmarked ? '已取消收藏' : '已收藏楼层');
     } catch (e) {
       _hint('收藏操作失败：$e');
     } finally {
@@ -535,6 +584,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                 onReport: () => _reportPost(d.posts.first),
                                 onVote: (direction) => _vote(d.posts.first, direction),
                                 voting: _votingPostId == d.posts.first.id,
+                                onBookmark: () => _toggleBookmark(d.posts.first),
+                                bookmarking: _bookmarkBusy,
+                                onPollVote: (poll, options) => _pollVote(d.posts.first, poll, options),
+                                pollBusy: _pollBusy,
                               ),
                             ],
                           );
@@ -583,6 +636,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                           onReport: () => _reportPost(post),
                           onVote: (direction) => _vote(post, direction),
                           voting: _votingPostId == post.id,
+                          onBookmark: () => _toggleBookmark(post),
+                          bookmarking: _bookmarkBusy,
+                          onPollVote: (poll, options) => _pollVote(post, poll, options),
+                          pollBusy: _pollBusy,
                         );
                       },
                     ),
@@ -754,6 +811,10 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onReport;
   final ValueChanged<String> onVote;
   final bool voting;
+  final VoidCallback onBookmark;
+  final bool bookmarking;
+  final void Function(PostPoll, List<String>?) onPollVote;
+  final Set<String> pollBusy;
 
   const _PostCard({
     required this.post,
@@ -767,6 +828,10 @@ class _PostCard extends StatelessWidget {
     required this.onReport,
     required this.onVote,
     required this.voting,
+    required this.onBookmark,
+    required this.bookmarking,
+    required this.onPollVote,
+    required this.pollBusy,
   });
 
   Future<void> _openAvatarLink(String url) async {
@@ -807,6 +872,10 @@ class _PostCard extends StatelessWidget {
             },
             // 图片：点击进入全屏查看器（缩放 / 双击 / 多图翻页）
             customWidgetBuilder: (element) {
+              if (element.classes.contains('poll') && post.polls.any((poll) =>
+                  poll.name == element.attributes['data-poll-name'])) {
+                return const SizedBox.shrink();
+              }
               if (element.localName != 'img') return null;
               final rawSrc = element.attributes['src'] ?? '';
               final src = Uri.parse(AppState.baseUrl).resolve(rawSrc).toString();
@@ -929,9 +998,12 @@ class _PostCard extends StatelessWidget {
                     if (v == 'copy') onCopyLink();
                     if (v == 'edit') onEdit?.call();
                     if (v == 'report') onReport();
+                    if (v == 'bookmark') onBookmark();
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'copy', child: Text('复制楼层链接')),
+                    PopupMenuItem(value: 'bookmark', enabled: !bookmarking,
+                      child: Text(post.bookmarked ? '取消收藏此楼层' : '收藏此楼层')),
                     if (onEdit != null)
                       const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
                     const PopupMenuItem(value: 'report', child: Text('举报帖子')),
@@ -942,6 +1014,16 @@ class _PostCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             body,
+            if (!post.hidden)
+              for (final poll in post.polls)
+                PollCard(
+                  key: ValueKey('${post.id}:${poll.name}'),
+                  poll: poll, myVotes: post.pollsVotes[poll.name] ?? const [],
+                  busy: pollBusy.contains('${post.id}:${poll.name}'),
+                  loggedIn: context.watch<AppState>().isLoggedIn,
+                  onVote: (options) => onPollVote(poll, options),
+                  onRemove: () => onPollVote(poll, null),
+                ),
             const SizedBox(height: 4),
             Row(
               children: [
