@@ -1,4 +1,6 @@
 import 'dart:ui' show Color;
+import 'polls.dart';
+export 'polls.dart';
 
 /// 通用安全取值
 int? toInt(dynamic v) {
@@ -262,6 +264,8 @@ class Post {
   final int? voteScore;
   final String? voteDirection;
   final bool canVoteDown;
+  final List<PostPoll> polls;
+  final Map<String, List<String>> pollsVotes;
 
   Post({
     required this.id,
@@ -285,6 +289,8 @@ class Post {
     this.voteScore,
     this.voteDirection,
     this.canVoteDown = false,
+    this.polls = const [],
+    this.pollsVotes = const {},
   });
 
   factory Post.fromJson(dynamic json) {
@@ -320,6 +326,13 @@ class Post {
       voteScore: toInt(json['vote_score']),
       voteDirection: json['vote_direction']?.toString(),
       canVoteDown: toBool(json['can_vote_down']),
+      polls: ((json['polls'] as List?) ?? [])
+          .whereType<Map>().map(PostPoll.fromJson).toList(),
+      pollsVotes: {
+        for (final entry in ((json['polls_votes'] as Map?) ?? {}).entries)
+          if (entry.value is List)
+            entry.key.toString(): (entry.value as List).whereType<String>().toList(),
+      },
     );
   }
 
@@ -334,6 +347,10 @@ class Post {
     int? voteScore,
     String? voteDirection,
     bool? canVoteDown,
+    List<PostPoll>? polls,
+    Map<String, List<String>>? pollsVotes,
+    bool clearBookmarkId = false,
+    bool clearCurrentUserReaction = false,
   }) => Post(
         id: id,
         postNumber: postNumber,
@@ -349,14 +366,36 @@ class Post {
         hidden: hidden,
         replyToPostNumber: replyToPostNumber,
         bookmarked: bookmarked ?? this.bookmarked,
-        bookmarkId: bookmarkId ?? this.bookmarkId,
+        bookmarkId: clearBookmarkId ? null : bookmarkId ?? this.bookmarkId,
         reactions: reactions ?? this.reactions,
-        currentUserReaction: currentUserReaction ?? this.currentUserReaction,
+        currentUserReaction: clearCurrentUserReaction ? null
+            : currentUserReaction ?? this.currentUserReaction,
         reactionUsersCount: reactionUsersCount ?? this.reactionUsersCount,
         voteScore: voteScore ?? this.voteScore,
         voteDirection: voteDirection ?? this.voteDirection,
         canVoteDown: canVoteDown ?? this.canVoteDown,
+        polls: polls ?? this.polls,
+        pollsVotes: pollsVotes ?? this.pollsVotes,
       );
+
+  /// Reaction responses must not overwrite concurrently changed poll or
+  /// bookmark state, even when the endpoint also serializes an older post.
+  Post mergeReactionUpdate(Map<String, dynamic> json) {
+    final update = Post.fromJson(json);
+    return copyWith(
+      likeCount: json.containsKey('like_count') || json.containsKey('actions_summary')
+          ? update.likeCount : null,
+      likedByMe: json.containsKey('acted') || json.containsKey('actions_summary')
+          ? update.likedByMe : null,
+      reactions: json.containsKey('reactions') ? update.reactions : null,
+      currentUserReaction: json.containsKey('current_user_reaction')
+          ? update.currentUserReaction : null,
+      clearCurrentUserReaction: json.containsKey('current_user_reaction') &&
+          json['current_user_reaction'] == null,
+      reactionUsersCount: json.containsKey('reaction_users_count')
+          ? update.reactionUsersCount : null,
+    );
+  }
 }
 
 class TopicDetail {
@@ -549,6 +588,7 @@ class UserProfile {
 }
 
 class SearchPostItem {
+  final int id;
   final int topicId;
   final String topicTitle;
   final String blurb;
@@ -558,6 +598,7 @@ class SearchPostItem {
   final DateTime? createdAt;
 
   SearchPostItem({
+    this.id = 0,
     required this.topicId,
     required this.topicTitle,
     required this.blurb,
@@ -570,7 +611,8 @@ class SearchPostItem {
 
 class SearchResult {
   final List<SearchPostItem> items;
-  SearchResult({required this.items});
+  final bool hasMore;
+  SearchResult({required this.items, this.hasMore = false});
 
   factory SearchResult.fromJson(dynamic json) {
     final titles = <int, String>{};
@@ -588,6 +630,7 @@ class SearchResult {
           .replaceAll('&#39;', "'")
           .replaceAll('&quot;', '"');
       items.add(SearchPostItem(
+        id: toInt(p['id']) ?? 0,
         topicId: tid,
         topicTitle: title,
         blurb: p['blurb']?.toString() ?? '',
@@ -597,7 +640,8 @@ class SearchResult {
         createdAt: toDate(p['created_at']),
       ));
     }
-    return SearchResult(items: items);
+    return SearchResult(items: items,
+      hasMore: toBool((json['grouped_search_result'] as Map?)?['more_full_page_results']));
   }
 }
 
@@ -605,6 +649,7 @@ class BookmarkItem {
   final int id;
   final int? topicId;
   final int? postId;
+  final int? postNumber;
   final String title;
   final String excerpt;
   final DateTime? createdAt;
@@ -614,6 +659,7 @@ class BookmarkItem {
     required this.id,
     this.topicId,
     this.postId,
+    this.postNumber,
     required this.title,
     required this.excerpt,
     this.createdAt,
@@ -626,7 +672,9 @@ class BookmarkItem {
     return BookmarkItem(
       id: toInt(json['id']) ?? 0,
       topicId: toInt(json['topic_id']),
-      postId: type == 'Topic' ? null : toInt(json['bookmarkable_id']),
+      postId: type == null || type == 'Post'
+          ? toInt(json['post_id']) ?? toInt(json['bookmarkable_id']) : null,
+      postNumber: toInt(json['linked_post_number']) ?? toInt(json['post_number']),
       title: (json['fancy_title'] ?? json['title'])?.toString() ?? '',
       excerpt: json['excerpt']?.toString() ?? '',
       createdAt: toDate(json['created_at']),
@@ -636,12 +684,13 @@ class BookmarkItem {
 }
 
 /// Find the bookmark for a post without selecting a different floor's bookmark.
-int? bookmarkIdForPost(List<BookmarkItem> bookmarks, int postId, int topicId) {
+int? bookmarkIdForPost(List<BookmarkItem> bookmarks, int postId, int topicId,
+    {bool allowTopicBookmark = true}) {
   for (final bookmark in bookmarks) {
     if (bookmark.postId == postId) return bookmark.id;
   }
   for (final bookmark in bookmarks) {
-    if (bookmark.postId == null && bookmark.topicId == topicId) {
+    if (allowTopicBookmark && bookmark.postId == null && bookmark.topicId == topicId) {
       return bookmark.id;
     }
   }

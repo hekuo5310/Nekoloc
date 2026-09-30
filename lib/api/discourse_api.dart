@@ -438,10 +438,23 @@ class DiscourseApi {
 
   // ---------------------------------------------------------------- 搜索
 
-  Future<SearchResult> search(String q) async {
-    final d = await _getJson('/search.json', query: {'q': q});
+  Future<SearchResult> search(String q, {int page = 1}) async {
+    final d = await _getJson('/search.json', query: {'q': q, 'page': page});
     return SearchResult.fromJson(d);
   }
+
+  Future<PollVoteResult> votePoll(int postId, String pollName,
+      List<String> options) async {
+    if (options.isEmpty) throw ApiException('请选择投票选项');
+    return PollVoteResult.fromJson(await _mutate('PUT', '/polls/vote', data: {
+      'post_id': postId.toString(), 'poll_name': pollName, 'options[]': options,
+    }));
+  }
+
+  Future<PollVoteResult> removePollVote(int postId, String pollName) async =>
+      PollVoteResult.fromJson(await _mutate('DELETE', '/polls/vote', data: {
+        'post_id': postId.toString(), 'poll_name': pollName,
+      }));
 
   // ---------------------------------------------------------------- 私信
 
@@ -472,14 +485,17 @@ class DiscourseApi {
       'bookmarkable_id': postId.toString(),
       'bookmarkable_type': 'Post',
     });
-    return toInt(d['id']) ?? 0;
+    final id = toInt(d['id']);
+    if (id == null || id <= 0) throw ApiException('收藏失败：服务器未返回收藏编号');
+    return id;
   }
 
   Future<void> removeBookmark(int bookmarkId) =>
       _mutate('DELETE', '/bookmarks/$bookmarkId').then((_) {});
 
-  Future<List<BookmarkItem>> bookmarks(String username) async {
-    final d = await _getJson('/u/$username/bookmarks.json');
+  Future<List<BookmarkItem>> bookmarks(String username, {int page = 0}) async {
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}/bookmarks.json',
+        query: {'page': page});
     final list =
         (d['user_bookmark_list'] as Map?)?['bookmarks'] as List? ?? [];
     return list.map((e) => BookmarkItem.fromJson(e)).toList();

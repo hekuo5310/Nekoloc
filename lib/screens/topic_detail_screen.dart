@@ -13,6 +13,7 @@ import '../theme.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/poll_card.dart';
 import 'composer_screen.dart';
 import 'tag_topics_screen.dart';
 import 'public_profile_screen.dart';
@@ -29,7 +30,8 @@ List<String> _extractImages(String cookedHtml) {
 /// 话题详情：楼层列表 + 点赞 + 回复
 class TopicDetailScreen extends StatefulWidget {
   final int topicId;
-  const TopicDetailScreen({super.key, required this.topicId});
+  final int? initialPostId;
+  const TopicDetailScreen({super.key, required this.topicId, this.initialPostId});
 
   @override
   State<TopicDetailScreen> createState() => _TopicDetailScreenState();
@@ -37,6 +39,8 @@ class TopicDetailScreen extends StatefulWidget {
 
 class _TopicDetailScreenState extends State<TopicDetailScreen> {
   TopicDetail? _detail;
+  int? _focusedPostId;
+  String? _focusError;
   String? _error;
   bool _loading = true;
   bool _loadingMore = false;
@@ -44,6 +48,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   int? _votingPostId;
   bool _bookmarkBusy = false;
   bool _notificationBusy = false;
+  final Set<String> _pollBusy = {};
   final _scroll = ScrollController();
   DateTime _openedAt = DateTime.now();
   int _reportedPosts = 0;
@@ -52,13 +57,14 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _focusedPostId = widget.initialPostId;
     _openedAt = DateTime.now();
     _apiRef = context.read<AppState>().api;
     _load();
     _scroll.addListener(() {
       final d = _detail;
       if (d == null) return;
-      if (_scroll.position.extentAfter < 600 &&
+      if (_focusedPostId == null && _scroll.position.extentAfter < 600 &&
           !_loadingMore &&
           !_loading &&
           _detail!.posts.length < _detail!.stream.length) {
@@ -79,14 +85,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     final d = _detail;
     final api = _apiRef;
     if (d == null || api == null || d.posts.isEmpty) return;
+    final read = _focusedPostId == null ? d.posts
+        : d.posts.where((p) => p.id == _focusedPostId).toList();
+    if (read.isEmpty) return;
     final totalMs = DateTime.now().difference(_openedAt).inMilliseconds;
     if (totalMs < 2000) return;
-    final readPosts = d.posts.length - _reportedPosts;
+    final readPosts = read.length - _reportedPosts;
     if (readPosts <= 0) return;
-    _reportedPosts = d.posts.length;
-    final per = (totalMs / d.posts.length).round().clamp(1000, 60000);
+    _reportedPosts = read.length;
+    final per = (totalMs / read.length).round().clamp(1000, 60000);
     final timings = <int, int>{};
-    for (final p in d.posts) {
+    for (final p in read) {
       timings[p.postNumber] = per;
     }
     // 不依赖 context，静默上报
@@ -99,10 +108,23 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       _error = null;
     });
     try {
-      final d = await context.read<AppState>().api.topic(widget.topicId);
+      final api = context.read<AppState>().api;
+      var d = await api.topic(widget.topicId);
+      String? focusError;
+      final target = _focusedPostId;
+      if (target != null && !d.posts.any((p) => p.id == target)) {
+        try {
+          final matches = (await api.topicPosts(widget.topicId, [target]))
+              .where((p) => p.id == target && (p.topicId == null || p.topicId == widget.topicId)).toList();
+          if (matches.isEmpty) throw ApiException('目标楼层不存在或无权访问');
+          final posts = [...d.posts, ...matches]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+          d = _copyWithPosts(d, posts);
+        } catch (e) { focusError = '无法定位目标楼层：$e'; }
+      }
       if (!mounted) return;
       setState(() {
         _detail = d;
+        _focusError = focusError;
         _loading = false;
       });
     } catch (e) {
@@ -129,9 +151,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       final more =
           await context.read<AppState>().api.topicPosts(widget.topicId, nextIds);
       if (!mounted) return;
-      final merged = [...d.posts, ...more.where((p) => !loaded.contains(p.id))]
+      final latest = _detail ?? d;
+      final currentIds = latest.posts.map((p) => p.id).toSet();
+      final merged = [...latest.posts, ...more.where((p) => !currentIds.contains(p.id))]
         ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
-      setState(() => _detail = _copyWithPosts(d, merged));
+      setState(() => _detail = _copyWithPosts(latest, merged));
     } catch (e) {
       _hint('加载楼层失败：$e');
     } finally {
@@ -177,11 +201,12 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       final index = d.posts.indexWhere((p) => p.id == post.id);
       if (index >= 0) {
         final posts = [...d.posts];
-        posts[index] = post.copyWith(
-          voteScore: toInt(result['vote_score']) ?? post.voteScore,
+        final latest = posts[index];
+        posts[index] = latest.copyWith(
+          voteScore: toInt(result['vote_score']) ?? latest.voteScore,
           voteDirection: result['vote_direction']?.toString() ?? target,
           canVoteDown: result.containsKey('can_vote_down')
-              ? result['can_vote_down'] == true : post.canVoteDown,
+              ? result['can_vote_down'] == true : latest.canVoteDown,
         );
         setState(() => _detail = _copyWithPosts(d, posts));
       }
@@ -207,9 +232,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       if (d == null || !mounted) return;
       final idx = d.posts.indexWhere((p) => p.id == post.id);
       if (idx >= 0) {
-        final newPost = Post.fromJson(updated);
         final posts = [...d.posts];
-        posts[idx] = newPost;
+        posts[idx] = posts[idx].mergeReactionUpdate(updated);
         setState(() => _detail = _copyWithPosts(d, posts));
       }
     } catch (e) {
@@ -219,38 +243,83 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
-  /// 收藏 / 取消收藏（作用于首帖）
-  Future<void> _toggleBookmark() async {
+  Future<void> _pollVote(Post post, PostPoll poll, List<String>? options) async {
+    final app = context.read<AppState>();
+    final key = '${post.id}:${poll.name}';
+    if (!app.isLoggedIn) { _hint('请先登录'); return; }
+    if (_pollBusy.contains(key) || !poll.canVote) return;
+    if (options != null && !poll.validSelection(options.toSet())) {
+      _hint('请选择 ${poll.minimum}–${poll.maximum} 项'); return;
+    }
+    setState(() => _pollBusy.add(key));
+    try {
+      final result = options == null
+          ? await app.api.removePollVote(post.id, poll.name)
+          : await app.api.votePoll(post.id, poll.name, options);
+      if (!mounted) return;
+      // If a plugin version omits its state, fetch server truth instead of
+      // guessing hidden results or claiming that a vote succeeded locally.
+      if (result.poll == null || result.vote == null) {
+        await _load();
+        return;
+      }
+      final d = _detail;
+      if (d == null) return;
+      final posts = d.posts.map((p) => p.id != post.id ? p : p.copyWith(
+        polls: p.polls.map((item) => item.name == poll.name ? result.poll! : item).toList(),
+        pollsVotes: {...p.pollsVotes, poll.name: result.vote!},
+      )).toList();
+      setState(() => _detail = _copyWithPosts(d, posts));
+    } catch (e) {
+      _hint('投票操作失败：$e');
+    } finally {
+      if (mounted) setState(() => _pollBusy.remove(key));
+    }
+  }
+
+  /// 首帖工具栏和逐楼菜单共用同一收藏状态。
+  Future<void> _toggleBookmark([Post? target]) async {
     final app = context.read<AppState>();
     final d = _detail;
     if (d == null || d.posts.isEmpty) return;
-    if (!app.isLoggedIn) {
-      _hint('请先登录');
-      return;
-    }
+    if (!app.isLoggedIn) { _hint('请先登录'); return; }
     if (_bookmarkBusy) return;
+    final post = target ?? d.posts.first;
     setState(() => _bookmarkBusy = true);
-    final first = d.posts.first;
+    int? newId;
     try {
-      if (first.bookmarked) {
-        // 无 bookmark_id 时先查收藏列表定位
-        var bid = first.bookmarkId;
-        if (bid == null) {
-          final list = await app.api.bookmarks(app.user!.username);
-          bid = bookmarkIdForPost(list, first.id, d.id);
-          if (bid == null) throw ApiException('找不到此话题的收藏记录，请刷新后重试');
+      if (post.bookmarked) {
+        var bid = post.bookmarkId;
+        var page = 0;
+        int? topicBookmarkId;
+        final seen = <int>{};
+        while (bid == null) {
+          final list = await app.api.bookmarks(app.user!.username, page: page++);
+          final unseen = list.where((b) => seen.add(b.id)).toList();
+          bid = bookmarkIdForPost(unseen, post.id, d.id, allowTopicBookmark: false);
+          if (post.postNumber == 1) {
+            for (final bookmark in unseen) {
+              if (bookmark.postId == null && bookmark.topicId == d.id) {
+                topicBookmarkId ??= bookmark.id;
+              }
+            }
+          }
+          if (unseen.isEmpty) break;
         }
+        bid ??= topicBookmarkId;
+        if (bid == null) throw ApiException('找不到此楼层的收藏记录，请刷新后重试');
         await app.api.removeBookmark(bid);
       } else {
-        await app.api.addBookmark(first.id);
+        newId = await app.api.addBookmark(post.id);
       }
-      if (!mounted) return;
-      final posts = [...d.posts];
-      posts[0] = first.copyWith(
-        bookmarked: !first.bookmarked,
-      );
-      setState(() => _detail = _copyWithPosts(d, posts));
-      _hint(first.bookmarked ? '已取消收藏' : '已收藏');
+      if (!mounted || _detail == null) return;
+      final latest = _detail!;
+      final posts = latest.posts.map((p) => p.id != post.id ? p : p.copyWith(
+        bookmarked: !post.bookmarked, bookmarkId: newId,
+        clearBookmarkId: post.bookmarked,
+      )).toList();
+      setState(() => _detail = _copyWithPosts(latest, posts));
+      _hint(post.bookmarked ? '已取消收藏' : '已收藏楼层');
     } catch (e) {
       _hint('收藏操作失败：$e');
     } finally {
@@ -421,10 +490,27 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
+  Widget _postCard(TopicDetail detail, Post post) => _PostCard(
+    post: post, detail: detail,
+    onLike: () => _toggleLike(post),
+    onShowReactions: () => _showReactionPicker(post),
+    onReply: () => _reply(replyToPostNumber: post.postNumber,
+      hint: '回复 #${post.postNumber} ${post.username}'),
+    onCopyLink: () => _copyLink(post.postNumber),
+    onChanged: _load, onEdit: post.canEdit ? () => _editPost(post) : null,
+    onReport: () => _reportPost(post),
+    onVote: (direction) => _vote(post, direction),
+    voting: _votingPostId == post.id,
+    onBookmark: () => _toggleBookmark(post), bookmarking: _bookmarkBusy,
+    onPollVote: (poll, options) => _pollVote(post, poll, options), pollBusy: _pollBusy,
+  );
+
   @override
   Widget build(BuildContext context) {
     final d = _detail;
     final scheme = Theme.of(context).colorScheme;
+    final focused = d?.posts.where((p) => p.id == _focusedPostId).toList() ?? <Post>[];
+    final displayPosts = focused.isNotEmpty ? focused : (d?.posts ?? <Post>[]);
 
     return Scaffold(
       appBar: AppBar(
@@ -512,7 +598,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                       controller: _scroll,
                       padding: const EdgeInsets.only(
                           left: 10, right: 10, top: 10, bottom: 96),
-                      itemCount: d.posts.length + 1,
+                      itemCount: displayPosts.length + 1,
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemBuilder: (context, i) {
                         if (i == 0) {
@@ -520,26 +606,22 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             children: [
                               _TopicHeader(detail: d),
                               const SizedBox(height: 8),
-                              _PostCard(
-                                post: d.posts.first,
-                                detail: d,
-                                onLike: () => _toggleLike(d.posts.first),
-                                onShowReactions: () => _showReactionPicker(d.posts.first),
-                                onReply: () => _reply(
-                                    replyToPostNumber: 1,
-                                    hint: '回复 #1 ${d.posts.first.username}'),
-                                onCopyLink: () => _copyLink(d.posts.first.postNumber),
-                                onChanged: _load,
-                                onEdit: d.posts.first.canEdit
-                                    ? () => _editPost(d.posts.first) : null,
-                                onReport: () => _reportPost(d.posts.first),
-                                onVote: (direction) => _vote(d.posts.first, direction),
-                                voting: _votingPostId == d.posts.first.id,
-                              ),
+                              if (_focusError != null)
+                                Padding(padding: const EdgeInsets.all(8), child: Text(_focusError!,
+                                  style: TextStyle(color: scheme.error))),
+                              if (focused.isNotEmpty)
+                                Padding(padding: const EdgeInsets.all(8),
+                                  child: Text('已定位到 #${focused.first.postNumber}')),
+                              _postCard(d, displayPosts.first),
                             ],
                           );
                         }
-                        if (i == d.posts.length) {
+                        if (i == displayPosts.length) {
+                          if (focused.isNotEmpty) {
+                            return Center(child: TextButton.icon(
+                              onPressed: () => setState(() => _focusedPostId = null),
+                              icon: const Icon(Icons.forum_outlined), label: const Text('查看完整话题')));
+                          }
                           if (d.posts.length < d.stream.length) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -567,23 +649,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             ),
                           );
                         }
-                        final post = d.posts[i];
-                        return _PostCard(
-                          post: post,
-                          detail: d,
-                          onLike: () => _toggleLike(post),
-                          onShowReactions: () => _showReactionPicker(post),
-                          onReply: () => _reply(
-                              replyToPostNumber: post.postNumber,
-                              hint: '回复 #${post.postNumber} ${post.username}'),
-                          onCopyLink: () => _copyLink(post.postNumber),
-                          onChanged: _load,
-                          onEdit: post.canEdit
-                              ? () => _editPost(post) : null,
-                          onReport: () => _reportPost(post),
-                          onVote: (direction) => _vote(post, direction),
-                          voting: _votingPostId == post.id,
-                        );
+                        return _postCard(d, displayPosts[i]);
                       },
                     ),
     );
@@ -754,6 +820,10 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onReport;
   final ValueChanged<String> onVote;
   final bool voting;
+  final VoidCallback onBookmark;
+  final bool bookmarking;
+  final void Function(PostPoll, List<String>?) onPollVote;
+  final Set<String> pollBusy;
 
   const _PostCard({
     required this.post,
@@ -767,6 +837,10 @@ class _PostCard extends StatelessWidget {
     required this.onReport,
     required this.onVote,
     required this.voting,
+    required this.onBookmark,
+    required this.bookmarking,
+    required this.onPollVote,
+    required this.pollBusy,
   });
 
   Future<void> _openAvatarLink(String url) async {
@@ -807,6 +881,10 @@ class _PostCard extends StatelessWidget {
             },
             // 图片：点击进入全屏查看器（缩放 / 双击 / 多图翻页）
             customWidgetBuilder: (element) {
+              if (element.classes.contains('poll') && post.polls.any((poll) =>
+                  poll.name == element.attributes['data-poll-name'])) {
+                return const SizedBox.shrink();
+              }
               if (element.localName != 'img') return null;
               final rawSrc = element.attributes['src'] ?? '';
               final src = Uri.parse(AppState.baseUrl).resolve(rawSrc).toString();
@@ -929,9 +1007,12 @@ class _PostCard extends StatelessWidget {
                     if (v == 'copy') onCopyLink();
                     if (v == 'edit') onEdit?.call();
                     if (v == 'report') onReport();
+                    if (v == 'bookmark') onBookmark();
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'copy', child: Text('复制楼层链接')),
+                    PopupMenuItem(value: 'bookmark', enabled: !bookmarking,
+                      child: Text(post.bookmarked ? '取消收藏此楼层' : '收藏此楼层')),
                     if (onEdit != null)
                       const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
                     const PopupMenuItem(value: 'report', child: Text('举报帖子')),
@@ -942,6 +1023,16 @@ class _PostCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             body,
+            if (!post.hidden)
+              for (final poll in post.polls)
+                PollCard(
+                  key: ValueKey('${post.id}:${poll.name}'),
+                  poll: poll, myVotes: post.pollsVotes[poll.name] ?? const [],
+                  busy: pollBusy.contains('${post.id}:${poll.name}'),
+                  loggedIn: context.watch<AppState>().isLoggedIn,
+                  onVote: (options) => onPollVote(poll, options),
+                  onRemove: () => onPollVote(poll, null),
+                ),
             const SizedBox(height: 4),
             Row(
               children: [
