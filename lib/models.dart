@@ -350,6 +350,7 @@ class Post {
     List<PostPoll>? polls,
     Map<String, List<String>>? pollsVotes,
     bool clearBookmarkId = false,
+    bool clearCurrentUserReaction = false,
   }) => Post(
         id: id,
         postNumber: postNumber,
@@ -367,7 +368,8 @@ class Post {
         bookmarked: bookmarked ?? this.bookmarked,
         bookmarkId: clearBookmarkId ? null : bookmarkId ?? this.bookmarkId,
         reactions: reactions ?? this.reactions,
-        currentUserReaction: currentUserReaction ?? this.currentUserReaction,
+        currentUserReaction: clearCurrentUserReaction ? null
+            : currentUserReaction ?? this.currentUserReaction,
         reactionUsersCount: reactionUsersCount ?? this.reactionUsersCount,
         voteScore: voteScore ?? this.voteScore,
         voteDirection: voteDirection ?? this.voteDirection,
@@ -375,6 +377,25 @@ class Post {
         polls: polls ?? this.polls,
         pollsVotes: pollsVotes ?? this.pollsVotes,
       );
+
+  /// Reaction responses must not overwrite concurrently changed poll or
+  /// bookmark state, even when the endpoint also serializes an older post.
+  Post mergeReactionUpdate(Map<String, dynamic> json) {
+    final update = Post.fromJson(json);
+    return copyWith(
+      likeCount: json.containsKey('like_count') || json.containsKey('actions_summary')
+          ? update.likeCount : null,
+      likedByMe: json.containsKey('acted') || json.containsKey('actions_summary')
+          ? update.likedByMe : null,
+      reactions: json.containsKey('reactions') ? update.reactions : null,
+      currentUserReaction: json.containsKey('current_user_reaction')
+          ? update.currentUserReaction : null,
+      clearCurrentUserReaction: json.containsKey('current_user_reaction') &&
+          json['current_user_reaction'] == null,
+      reactionUsersCount: json.containsKey('reaction_users_count')
+          ? update.reactionUsersCount : null,
+    );
+  }
 }
 
 class TopicDetail {

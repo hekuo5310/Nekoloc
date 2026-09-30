@@ -232,6 +232,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
   }
 
   Future<void> _submit() async {
+    if (_busy || _uploading) return;
     final title = _titleCtrl.text.trim();
     // Editing must preserve Markdown indentation and trailing newlines.
     final raw = widget.editPostId == null

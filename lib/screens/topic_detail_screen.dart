@@ -181,11 +181,12 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       final index = d.posts.indexWhere((p) => p.id == post.id);
       if (index >= 0) {
         final posts = [...d.posts];
-        posts[index] = post.copyWith(
-          voteScore: toInt(result['vote_score']) ?? post.voteScore,
+        final latest = posts[index];
+        posts[index] = latest.copyWith(
+          voteScore: toInt(result['vote_score']) ?? latest.voteScore,
           voteDirection: result['vote_direction']?.toString() ?? target,
           canVoteDown: result.containsKey('can_vote_down')
-              ? result['can_vote_down'] == true : post.canVoteDown,
+              ? result['can_vote_down'] == true : latest.canVoteDown,
         );
         setState(() => _detail = _copyWithPosts(d, posts));
       }
@@ -211,9 +212,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       if (d == null || !mounted) return;
       final idx = d.posts.indexWhere((p) => p.id == post.id);
       if (idx >= 0) {
-        final newPost = Post.fromJson(updated);
         final posts = [...d.posts];
-        posts[idx] = newPost;
+        posts[idx] = posts[idx].mergeReactionUpdate(updated);
         setState(() => _detail = _copyWithPosts(d, posts));
       }
     } catch (e) {

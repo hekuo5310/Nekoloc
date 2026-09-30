@@ -48,6 +48,22 @@ void main() {
     expect(PostPoll.fromJson({}).name, 'poll');
   });
 
+  test('reaction updates preserve concurrent poll and bookmark changes', () {
+    final post = Post.fromJson({'id': 10, 'bookmarked': true, 'bookmark_id': 22,
+      'vote_score': 5, 'current_user_reaction': 'heart',
+      'polls_votes': {'poll': ['a']}, 'like_count': 2});
+    final update = post.mergeReactionUpdate({'id': 10,
+      'current_user_reaction': null, 'reaction_users_count': 3,
+      'bookmarked': false, 'polls_votes': {}, 'vote_score': 4});
+    expect(update.currentUserReaction, isNull);
+    expect(update.bookmarkId, 22);
+    expect(update.bookmarked, isTrue);
+    expect(update.pollsVotes['poll'], ['a']);
+    expect(update.voteScore, 5);
+    expect(update.likeCount, 2);
+    expect(update.reactionUsersCount, 3);
+  });
+
   test('search preserves post identity and server pagination signal', () {
     final result = SearchResult.fromJson({'topics': [{'id': 1, 'title': 'Topic'}],
       'posts': [{'id': 88, 'topic_id': 1, 'post_number': 9}],
