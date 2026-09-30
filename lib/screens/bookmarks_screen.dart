@@ -106,11 +106,11 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
               leading: Icon(Icons.bookmark, color: scheme.secondary),
               title: Text(b.title.replaceAll(RegExp(r'<[^>]*>'), ''), maxLines: 2,
                 overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              subtitle: Text('${b.excerpt}\n${timeAgo(b.createdAt)}', maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Text('${b.excerpt}\n${b.postNumber != null ? '#${b.postNumber} · ' : ''}${timeAgo(b.createdAt)}', maxLines: 2, overflow: TextOverflow.ellipsis),
               trailing: IconButton(tooltip: '取消收藏', onPressed: _deleting.contains(b.id) ? null : () => _remove(b),
                 icon: const Icon(Icons.bookmark_remove_outlined)),
               onTap: b.topicId == null ? null : () async {
-                await Navigator.push(context, MaterialPageRoute(builder: (_) => TopicDetailScreen(topicId: b.topicId!)));
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => TopicDetailScreen(topicId: b.topicId!, initialPostId: b.postId)));
                 if (mounted) _load();
               },
             );

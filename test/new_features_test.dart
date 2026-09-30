@@ -76,6 +76,14 @@ void main() {
       'hello in:title @alice tags:flutter order:latest');
   });
 
+  test('bookmark parsing retains the exact post and linked floor', () {
+    final postBookmark = BookmarkItem.fromJson({'id': 1, 'topic_id': 3,
+      'bookmarkable_type': 'Post', 'bookmarkable_id': 88, 'linked_post_number': 42});
+    expect(postBookmark.postId, 88);
+    expect(postBookmark.postNumber, 42);
+    expect(BookmarkItem.fromJson({'bookmarkable_type': 'Topic', 'bookmarkable_id': 3}).postId, isNull);
+  });
+
   test('a reply cannot remove a topic-wide bookmark and deleted ids are cleared', () {
     final bookmarks = [BookmarkItem(id: 1, topicId: 3, title: '', excerpt: '')];
     expect(bookmarkIdForPost(bookmarks, 4, 3, allowTopicBookmark: false), isNull);

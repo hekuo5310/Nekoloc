@@ -649,6 +649,7 @@ class BookmarkItem {
   final int id;
   final int? topicId;
   final int? postId;
+  final int? postNumber;
   final String title;
   final String excerpt;
   final DateTime? createdAt;
@@ -658,6 +659,7 @@ class BookmarkItem {
     required this.id,
     this.topicId,
     this.postId,
+    this.postNumber,
     required this.title,
     required this.excerpt,
     this.createdAt,
@@ -670,7 +672,9 @@ class BookmarkItem {
     return BookmarkItem(
       id: toInt(json['id']) ?? 0,
       topicId: toInt(json['topic_id']),
-      postId: type == 'Topic' ? null : toInt(json['bookmarkable_id']),
+      postId: type == null || type == 'Post'
+          ? toInt(json['post_id']) ?? toInt(json['bookmarkable_id']) : null,
+      postNumber: toInt(json['linked_post_number']) ?? toInt(json['post_number']),
       title: (json['fancy_title'] ?? json['title'])?.toString() ?? '',
       excerpt: json['excerpt']?.toString() ?? '',
       createdAt: toDate(json['created_at']),

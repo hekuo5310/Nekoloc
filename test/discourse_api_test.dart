@@ -33,6 +33,30 @@ void main() {
     expect(calls.last.form.containsKey('options[]'), isFalse);
   });
 
+  test('a bookmarked floor outside the initial batch can be fetched by post id', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final urls = <Uri>[];
+    server.listen((request) async {
+      urls.add(request.uri);
+      final targeted = request.uri.path.endsWith('/posts.json');
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({'id': 3, 'title': 'Topic',
+        'post_stream': {'stream': [1, 88], 'posts': [
+          {'id': targeted ? 88 : 1, 'topic_id': 3, 'post_number': targeted ? 42 : 1,
+            'username': 'alice', 'cooked': '<p>Saved content</p>'}
+        ]}}));
+      await request.response.close();
+    });
+    final api = DiscourseApi(base: 'http://127.0.0.1:${server.port}', jar: CookieJar(), userApiKey: 'test');
+    final topic = await api.topic(3);
+    expect(topic.posts.any((p) => p.id == 88), isFalse);
+    final target = await api.topicPosts(3, [88]);
+    expect(target.single.id, 88);
+    expect(target.single.postNumber, 42);
+    expect(urls.last.queryParametersAll['post_ids[]'], ['88']);
+  });
+
   test('paged search and bookmarks encode query parameters', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => server.close(force: true));

@@ -30,7 +30,8 @@ List<String> _extractImages(String cookedHtml) {
 /// 话题详情：楼层列表 + 点赞 + 回复
 class TopicDetailScreen extends StatefulWidget {
   final int topicId;
-  const TopicDetailScreen({super.key, required this.topicId});
+  final int? initialPostId;
+  const TopicDetailScreen({super.key, required this.topicId, this.initialPostId});
 
   @override
   State<TopicDetailScreen> createState() => _TopicDetailScreenState();
@@ -38,6 +39,8 @@ class TopicDetailScreen extends StatefulWidget {
 
 class _TopicDetailScreenState extends State<TopicDetailScreen> {
   TopicDetail? _detail;
+  int? _focusedPostId;
+  String? _focusError;
   String? _error;
   bool _loading = true;
   bool _loadingMore = false;
@@ -54,13 +57,14 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _focusedPostId = widget.initialPostId;
     _openedAt = DateTime.now();
     _apiRef = context.read<AppState>().api;
     _load();
     _scroll.addListener(() {
       final d = _detail;
       if (d == null) return;
-      if (_scroll.position.extentAfter < 600 &&
+      if (_focusedPostId == null && _scroll.position.extentAfter < 600 &&
           !_loadingMore &&
           !_loading &&
           _detail!.posts.length < _detail!.stream.length) {
@@ -81,14 +85,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     final d = _detail;
     final api = _apiRef;
     if (d == null || api == null || d.posts.isEmpty) return;
+    final read = _focusedPostId == null ? d.posts
+        : d.posts.where((p) => p.id == _focusedPostId).toList();
+    if (read.isEmpty) return;
     final totalMs = DateTime.now().difference(_openedAt).inMilliseconds;
     if (totalMs < 2000) return;
-    final readPosts = d.posts.length - _reportedPosts;
+    final readPosts = read.length - _reportedPosts;
     if (readPosts <= 0) return;
-    _reportedPosts = d.posts.length;
-    final per = (totalMs / d.posts.length).round().clamp(1000, 60000);
+    _reportedPosts = read.length;
+    final per = (totalMs / read.length).round().clamp(1000, 60000);
     final timings = <int, int>{};
-    for (final p in d.posts) {
+    for (final p in read) {
       timings[p.postNumber] = per;
     }
     // 不依赖 context，静默上报
@@ -101,10 +108,23 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       _error = null;
     });
     try {
-      final d = await context.read<AppState>().api.topic(widget.topicId);
+      final api = context.read<AppState>().api;
+      var d = await api.topic(widget.topicId);
+      String? focusError;
+      final target = _focusedPostId;
+      if (target != null && !d.posts.any((p) => p.id == target)) {
+        try {
+          final matches = (await api.topicPosts(widget.topicId, [target]))
+              .where((p) => p.id == target && (p.topicId == null || p.topicId == widget.topicId)).toList();
+          if (matches.isEmpty) throw ApiException('目标楼层不存在或无权访问');
+          final posts = [...d.posts, ...matches]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+          d = _copyWithPosts(d, posts);
+        } catch (e) { focusError = '无法定位目标楼层：$e'; }
+      }
       if (!mounted) return;
       setState(() {
         _detail = d;
+        _focusError = focusError;
         _loading = false;
       });
     } catch (e) {
@@ -470,10 +490,27 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
+  Widget _postCard(TopicDetail detail, Post post) => _PostCard(
+    post: post, detail: detail,
+    onLike: () => _toggleLike(post),
+    onShowReactions: () => _showReactionPicker(post),
+    onReply: () => _reply(replyToPostNumber: post.postNumber,
+      hint: '回复 #${post.postNumber} ${post.username}'),
+    onCopyLink: () => _copyLink(post.postNumber),
+    onChanged: _load, onEdit: post.canEdit ? () => _editPost(post) : null,
+    onReport: () => _reportPost(post),
+    onVote: (direction) => _vote(post, direction),
+    voting: _votingPostId == post.id,
+    onBookmark: () => _toggleBookmark(post), bookmarking: _bookmarkBusy,
+    onPollVote: (poll, options) => _pollVote(post, poll, options), pollBusy: _pollBusy,
+  );
+
   @override
   Widget build(BuildContext context) {
     final d = _detail;
     final scheme = Theme.of(context).colorScheme;
+    final focused = d?.posts.where((p) => p.id == _focusedPostId).toList() ?? <Post>[];
+    final displayPosts = focused.isNotEmpty ? focused : (d?.posts ?? <Post>[]);
 
     return Scaffold(
       appBar: AppBar(
@@ -561,7 +598,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                       controller: _scroll,
                       padding: const EdgeInsets.only(
                           left: 10, right: 10, top: 10, bottom: 96),
-                      itemCount: d.posts.length + 1,
+                      itemCount: displayPosts.length + 1,
                       separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemBuilder: (context, i) {
                         if (i == 0) {
@@ -569,30 +606,22 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             children: [
                               _TopicHeader(detail: d),
                               const SizedBox(height: 8),
-                              _PostCard(
-                                post: d.posts.first,
-                                detail: d,
-                                onLike: () => _toggleLike(d.posts.first),
-                                onShowReactions: () => _showReactionPicker(d.posts.first),
-                                onReply: () => _reply(
-                                    replyToPostNumber: 1,
-                                    hint: '回复 #1 ${d.posts.first.username}'),
-                                onCopyLink: () => _copyLink(d.posts.first.postNumber),
-                                onChanged: _load,
-                                onEdit: d.posts.first.canEdit
-                                    ? () => _editPost(d.posts.first) : null,
-                                onReport: () => _reportPost(d.posts.first),
-                                onVote: (direction) => _vote(d.posts.first, direction),
-                                voting: _votingPostId == d.posts.first.id,
-                                onBookmark: () => _toggleBookmark(d.posts.first),
-                                bookmarking: _bookmarkBusy,
-                                onPollVote: (poll, options) => _pollVote(d.posts.first, poll, options),
-                                pollBusy: _pollBusy,
-                              ),
+                              if (_focusError != null)
+                                Padding(padding: const EdgeInsets.all(8), child: Text(_focusError!,
+                                  style: TextStyle(color: scheme.error))),
+                              if (focused.isNotEmpty)
+                                Padding(padding: const EdgeInsets.all(8),
+                                  child: Text('已定位到 #${focused.first.postNumber}')),
+                              _postCard(d, displayPosts.first),
                             ],
                           );
                         }
-                        if (i == d.posts.length) {
+                        if (i == displayPosts.length) {
+                          if (focused.isNotEmpty) {
+                            return Center(child: TextButton.icon(
+                              onPressed: () => setState(() => _focusedPostId = null),
+                              icon: const Icon(Icons.forum_outlined), label: const Text('查看完整话题')));
+                          }
                           if (d.posts.length < d.stream.length) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -620,27 +649,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             ),
                           );
                         }
-                        final post = d.posts[i];
-                        return _PostCard(
-                          post: post,
-                          detail: d,
-                          onLike: () => _toggleLike(post),
-                          onShowReactions: () => _showReactionPicker(post),
-                          onReply: () => _reply(
-                              replyToPostNumber: post.postNumber,
-                              hint: '回复 #${post.postNumber} ${post.username}'),
-                          onCopyLink: () => _copyLink(post.postNumber),
-                          onChanged: _load,
-                          onEdit: post.canEdit
-                              ? () => _editPost(post) : null,
-                          onReport: () => _reportPost(post),
-                          onVote: (direction) => _vote(post, direction),
-                          voting: _votingPostId == post.id,
-                          onBookmark: () => _toggleBookmark(post),
-                          bookmarking: _bookmarkBusy,
-                          onPollVote: (poll, options) => _pollVote(post, poll, options),
-                          pollBusy: _pollBusy,
-                        );
+                        return _postCard(d, displayPosts[i]);
                       },
                     ),
     );
