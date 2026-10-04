@@ -26,3 +26,10 @@ web/
 *.log
 .DS_Store
 pubspec.lock
+
+# Signing credentials
+*.jks
+*.keystore
+key.properties
+*service-account*.json
+__pycache__/

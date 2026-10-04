@@ -25,6 +25,11 @@ jobs:
         with:
           channel: ${{ env.FLUTTER_VERSION }}
           cache: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: flutter pub get
       - run: flutter test
 
@@ -99,6 +104,19 @@ jobs:
           name: nodeloc-android
           path: dist/*
           if-no-files-found: error
+
+      - name: Verify upload signing with a disposable CI key
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/nekoloc-signing-smoke.jks
+          ANDROID_KEYSTORE_PASSWORD: ci-test-only-password
+          ANDROID_KEY_ALIAS: upload
+          ANDROID_KEY_PASSWORD: ci-test-only-password
+        run: |
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          keytool -genkeypair -keystore "$ANDROID_KEYSTORE_PATH" -storetype JKS -alias "$ANDROID_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 2 -dname "CN=Nekoloc CI test" -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          python3 scripts/android_signing.py
+          flutter build appbundle --release
+          python3 scripts/android_signing.py --verify build/app/outputs/bundle/release/app-release.aab
 
   # ============================================================ Linux
   linux:

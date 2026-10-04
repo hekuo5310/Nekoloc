@@ -59,7 +59,7 @@ git push origin v1.2.1
 
 ### 各平台注意事项
 
-- **Android**：直接安装 APK（universal 版兼容所有架构；arm64 版体积更小）。AAB 仅供上架 Google Play 使用
+- **Android**：直接安装 APK（universal 版兼容所有架构；arm64 版体积更小）。上架 Google Play 需使用独立签名工作流，见 [Google Play 配置](docs/google-play.md)。
 - **iOS**：CI 产出的 IPA 未签名（苹果要求付费开发者账号）。可通过 [AltStore](https://altstore.io)、[Sideloadly](https://sideloadly.io)、爱思助手等工具自签安装，或 fork 后用个人证书在 Xcode 中直接构建
 - **macOS**：首次打开若被 Gatekeeper 拦截，在终端执行 `xattr -cr /Applications/Nekoloc.app`，或到「系统设置 - 隐私与安全性」点击「仍要打开」
 - **Linux**：需要 GTK3 与 webkit2gtk 运行库（主流发行版自带；Arch 系执行 `sudo pacman -S gtk3 webkit2gtk-4.1`，Debian 系执行 `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`）
@@ -72,6 +72,10 @@ git push origin v1.2.1
 - 账号密码登录：`GET /session/csrf.json` 获取令牌，`POST /session` 登录（自动携带 2FA 字段），Cookie 会话持久化在本机
 - 浏览器授权登录：走 Discourse 官方 **User API Key** 流程——应用生成一次性 RSA-2048 密钥对，在内置浏览器中打开 `/user-api-key/new` 授权页（未登录时先跳转站点登录页，此时可使用任意登录方式），授权后站点把加密凭据重定向到 `discourse://` 协议，应用拦截并解密得到 API Key，之后以 `User-Api-Key` 请求头访问只读 / 写入端点
 - 其余均为常规端点（`/latest.json`、`/t/{id}.json`、`/posts`、`/post_actions`、`/bookmarks`、`/uploads.json`、`/topics/timings`、`/notifications.json` 等）
+
+## Google Play 发布
+
+在 Actions 中运行 **Google Play**：首次选择 `build-only` 下载签名 AAB；完成首次手动上传后，可选择 `internal-draft` 自动上传内部测试草稿。密钥配置及详细步骤见 [发布指南](docs/google-play.md)。
 
 ## 本地开发
 

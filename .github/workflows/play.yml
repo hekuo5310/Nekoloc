@@ -1,0 +1,118 @@
+name: Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '首次上架选 build-only，已有应用可选 internal-draft'
+        type: choice
+        options: [build-only, internal-draft]
+        default: build-only
+      version_code:
+        description: 'Android versionCode：正整数，必须大于 Play 中已使用的所有版本号'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-play
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate inputs and required secrets
+        env:
+          MODE: ${{ inputs.mode }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          code = os.environ['VERSION_CODE']
+          if not re.fullmatch(r'[1-9][0-9]*', code) or int(code) > 2100000000:
+              raise SystemExit('version_code must be an integer between 1 and 2100000000')
+          names = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
+          missing = [name for name in names if not os.environ[name]]
+          if missing:
+              raise SystemExit('Missing GitHub Secrets: ' + ', '.join(missing))
+          if os.environ['MODE'] == 'internal-draft':
+              try:
+                  account = json.loads(os.environ['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'])
+                  assert account['type'] == 'service_account'
+                  assert all(account.get(k) for k in ['client_email', 'private_key', 'token_uri'])
+              except (ValueError, KeyError, AssertionError, TypeError):
+                  raise SystemExit('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON must contain a service account key JSON')
+          PY
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate and patch Android project
+        run: |
+          flutter create . --platforms=android --org com.nodeloc --project-name nodeloc_app
+          python3 -m pip install pillow
+          python3 scripts/patch_platforms.py
+      - name: Run tests
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          flutter pub get
+          flutter test
+      - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'nekoloc-upload.jks'
+          data = base64.b64decode(''.join(os.environ['ANDROID_KEYSTORE_BASE64'].split()), validate=True)
+          with path.open('wb') as f:
+              os.chmod(path, 0o600)
+              f.write(data)
+          PY
+      - name: Build and verify signed AAB
+        env:
+          VERSION_CODE: ${{ inputs.version_code }}
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/nekoloc-upload.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 scripts/android_signing.py
+          flutter build appbundle --release --build-number="$VERSION_CODE"
+          python3 scripts/android_signing.py --verify build/app/outputs/bundle/release/app-release.aab
+      - name: Save signed AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nekoloc-Play-${{ inputs.version_code }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+      - name: Upload internal testing draft
+        if: inputs.mode == 'internal-draft'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: net.zerexa.nekoloc
+          releaseFiles: build/app/outputs/bundle/release/app-release.aab
+          tracks: internal
+          status: draft
+      - name: Clean up upload keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nekoloc-upload.jks"
