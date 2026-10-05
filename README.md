@@ -75,7 +75,7 @@ git push origin v1.2.1
 
 ## Google Play 发布
 
-在 Actions 中运行 **Google Play**：首次选择 `build-only` 下载签名 AAB；完成首次手动上传后，可选择 `internal-draft` 自动上传内部测试草稿。密钥配置及详细步骤见 [发布指南](docs/google-play.md)。
+`main` 普通提交自动上传 Google Play **公开测试（beta）**，版本名称取提交号后六位；推送 `v*` 标签自动上传 **正式版（production）**。数字 versionCode 自动生成。首次上架仍可手动运行 `build-only` 下载签名 AAB。密钥配置及详细步骤见 [发布指南](docs/google-play.md)。
 
 ## 本地开发
 

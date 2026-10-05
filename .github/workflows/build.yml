@@ -256,6 +256,8 @@ jobs:
   # ============================================================ Release（打 tag 时发布）
   release:
     name: GitHub Release
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]'))
     needs: [checks, android, linux, windows, apple]
     runs-on: ubuntu-latest
@@ -314,3 +316,23 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           body_path: release_notes.md
           files: dist/*
+
+  # Tags created with GITHUB_TOKEN do not trigger another push workflow.
+  # Call Play explicitly after an automatic [release] tag is published.
+  play-release:
+    name: Publish tagged version to Google Play
+    needs: release
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release.result == 'success'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/play.yml
+    with:
+      release_tag: ${{ needs.release.outputs.tag }}
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
