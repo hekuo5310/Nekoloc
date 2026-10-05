@@ -43,7 +43,7 @@ Windows PowerShell 将 JKS 转为 Base64 并复制到剪贴板：
 1. 在 Play Console 创建 Nekoloc；启用 Play 应用签名，让 Google 管理应用签名密钥。工作流使用你自己的**上传密钥**。
 2. 打开仓库 **Actions → Google Play → Run workflow**，选择 `main`。
 3. `mode` 选 `build-only`，无需填写数字版本号。
-4. 下载运行页面 Artifacts 中的 `Nekoloc-Play-<release_name>-<version_code>`，解压得到 `app-release.aab`，手动上传到 Play Console 的内部测试新版本。首次上传将建立包名和上传证书关联。上传到首次手动发布所需轨道，并完成控制台要求的发布流程。
+4. 下载运行页面 Artifacts 中的 `Nekoloc-Play-<release_name>-<version_code>`，解压得到 `app-release.aab`，手动上传到 Play Console 的公开测试新版本。首次上传将建立包名和上传证书关联。上传到首次手动发布所需轨道，并完成控制台要求的发布流程。
 5. 完成 Play Console 要求的应用资料和账号验证。商店资料、数据安全及内容分级等声明需要由维护者根据实际情况填写。
 
 `build-only` 不需要服务账号 JSON，适合先完成首次手动上传。
@@ -88,3 +88,9 @@ Google 生成的应用签名密钥与上传密钥通常不同。因此，Play �
 - 公开测试 / 正式版资格或审核未完成：先完成 Play Console 提示的要求，工作流不能绕过这些限制。
 
 参考：[Flutter Android 发布](https://docs.flutter.dev/deployment/android)、[Google Play API 设置](https://developers.google.com/android-publisher/getting_started)、[上传 Action](https://github.com/r0adkll/upload-google-play)。
+
+## 当前权限报错
+
+如果签名构建已成功，上传步骤返回 `The caller does not have permission`，请核对 JSON 中的 `client_email`：在 Play Console 的“用户和权限”里添加该服务账号，并让它可以访问 Nekoloc (`net.zerexa.nekoloc`)。自动发布需要查看应用信息、发布到测试轨道以及发布到正式版的对应权限。仅在 Google Cloud 中赋予 IAM 角色不能替代 Play Console 的应用权限。还需确认该项目已启用 Google Play Android Developer API。
+
+权限生效后，可在 **Google Play → Run workflow → main → auto** 发起新任务，不再填写 versionCode。若仍报错，应继续检查服务账号所属开发者账号、包名和应用访问范围。
