@@ -85,6 +85,7 @@ jobs:
           cache: true
       - name: Run tests
         run: |
+          python3 -m pip install pillow
           python3 -m unittest discover -s scripts -p 'test_*.py'
           flutter pub get
           flutter test
