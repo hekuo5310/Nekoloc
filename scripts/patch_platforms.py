@@ -81,6 +81,16 @@ def patch_android_package():
                                     f'android:name="{activity}"')
         if f'android:name="{activity}"' not in manifest:
             raise ValueError('Android MainActivity 配置与生成的 namespace 不一致')
+        # Generated platform directories are disposable; keep the native bridge
+        # in a tracked template and fail the build if it cannot be installed.
+        kotlin_path = 'android/app/src/main/kotlin/' + namespace.group(1).replace('.', '/') + '/MainActivity.kt'
+        if read(kotlin_path) is None:
+            raise FileNotFoundError(kotlin_path)
+        template_path = os.path.join(os.path.dirname(__file__), 'android', 'MainActivity.kt')
+        template = read(template_path)
+        if template is None or '__ANDROID_NAMESPACE__' not in template:
+            raise ValueError('Android 更新来源桥接模板缺失')
+        write(kotlin_path, template.replace('__ANDROID_NAMESPACE__', namespace.group(1)))
         write(p, m)
         write(manifest_path, manifest)
         print(f'[OK] Android applicationId = {ANDROID_PACKAGE}')

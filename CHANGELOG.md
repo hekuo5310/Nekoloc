@@ -6,6 +6,24 @@ Nekoloc（前身 NodeLoc APP）—— [NodeLoc](https://www.nodeloc.com) 第三�
 
 ---
 
+## [v1.3.7] — 2026-10-05 · Google Play 更新渠道
+
+### 新功能：按安装来源选择更新方式
+
+- **Google Play 更新**：从 Play 商店安装的 Android 客户端，点击“检查更新”打开对应商店页面，由 Play 提供公开测试或正式版更新
+- **来源识别**：读取 Android 的安装来源；Play 安装版本停止检查 GitHub Release，避免提示下载不同签名的 APK
+- **其他渠道**：从 GitHub 下载的 APK 及桌面端继续使用原有 GitHub 更新方式
+
+### 内部改进
+
+- 新增 Android 原生安装来源桥接，兼容 Android 11 前后的安装来源接口
+- Play 专用构建增加渠道标记，在系统无法提供安装来源时保留 Play 更新渠道
+- 增加更新来源、桌面端隔离及 Play 下载跳转回归测试，版本号更新为 1.3.7
+
+**详细对比**：[v1.3.6...v1.3.7](https://github.com/hekuo5310/Nekoloc/compare/v1.3.6...v1.3.7)
+
+---
+
 ## [v1.3.6] — 2026-09-30 · Android 软件包名称调整
 
 ### 新功能：使用 Zerexa 域名对应的包名

@@ -6,6 +6,7 @@ import '../app_state.dart';
 import '../mobile_source.dart';
 import '../theme.dart';
 import '../update_checker.dart';
+import '../update_source.dart';
 import '../widgets/common.dart';
 
 /// 设置页
@@ -18,6 +19,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _checking = false;
+  bool _playUpdates = false;
   int _pawTaps = 0; // 猫咪彩蛋计数器
   String? _deviceBadge; // 当前设备徽章预览（null = 桌面端/不可用）
 
@@ -25,6 +27,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadDevicePreview();
+    _loadUpdateSource();
+  }
+
+  Future<void> _loadUpdateSource() async {
+    final play = await UpdateSource.usesPlay();
+    if (mounted) setState(() => _playUpdates = play);
   }
 
   Future<void> _loadDevicePreview() async {
@@ -34,6 +42,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _checkUpdate() async {
     setState(() => _checking = true);
+    final play = await UpdateSource.usesPlay();
+    if (!mounted) return;
+    if (play) {
+      var opened = false;
+      try {
+        opened = await UpdateSource.openPlay();
+      } catch (_) {
+        // Report a failed launch so the user can open Play manually.
+      }
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _playUpdates = true;
+      });
+      if (!opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开 Google Play，请在 Play 商店中检查更新')),
+        );
+      }
+      return;
+    }
     final app = context.read<AppState>();
     await app.checkForUpdate(force: true);
     if (!mounted) return;
@@ -174,14 +203,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.system_update_outlined),
-                  title: const Text('检查更新'),
+                  title: Text(_playUpdates ? '在 Google Play 检查更新' : '检查更新'),
                   subtitle: Text(
-                    app.updateInfo != null
+                    _playUpdates
+                        ? '由 Google Play 提供当前测试轨道或正式版更新'
+                        : app.updateInfo != null
                         ? '新版本 v${app.updateInfo!.version} 可用'
                         : '当前版本 v$kAppVersion',
                     style: const TextStyle(fontSize: 12),
                   ),
-                  trailing: app.updateInfo != null
+                  trailing: !_playUpdates && app.updateInfo != null
                       ? FilledButton(
                           onPressed: () => _showUpdateDialog(app, app.updateInfo!),
                           child: const Text('更新'),

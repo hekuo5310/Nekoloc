@@ -32,6 +32,7 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: flutter pub get
       - run: flutter test
+      - run: flutter test test/update_source_test.dart --dart-define=PLAY_DISTRIBUTION=true
 
   # ============================================================ Android
   android:

@@ -116,7 +116,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           python3 scripts/android_signing.py
-          flutter build appbundle --release --build-number="$VERSION_CODE" --build-name="$VERSION_NAME"
+          flutter build appbundle --release --dart-define=PLAY_DISTRIBUTION=true --build-number="$VERSION_CODE" --build-name="$VERSION_NAME"
           python3 scripts/android_signing.py --verify build/app/outputs/bundle/release/app-release.aab
       - name: Save signed AAB
         uses: actions/upload-artifact@v4
