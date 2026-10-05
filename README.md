@@ -128,3 +128,8 @@ Linux 构建另需：`sudo apt install cmake ninja-build libgtk-3-dev libwebkit2
 ## License
 
 [MPL-2.0](./LICENSE)
+
+
+### 桌面安装包（v1.3.8 起）
+
+在 Releases 中，Windows 下载 `Nekoloc-Windows-Setup.exe`，macOS 下载 `Nekoloc-macOS-Installer.pkg`。Windows 默认安装到当前用户目录，支持开始菜单快捷方式和卸载；macOS 安装到 `/Applications/Nekoloc.app`。旧的 ZIP 便携包仍可下载。macOS 包暂未进行 Developer ID 签名与公证，系统可能要求手动允许打开。

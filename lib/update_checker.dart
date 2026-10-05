@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'update_source.dart';
 
 /// 应用当前版本（与 pubspec version 保持一致；发版时同步修改）
-const String kAppVersion = '1.3.7';
+const String kAppVersion = '1.3.8';
 
 class UpdateInfo {
   final String version;
@@ -26,8 +26,8 @@ class UpdateInfo {
   /// 当前平台对应的安装包文件名（null 表示无对应资产，回退到 Release 页）
   static String? platformAssetName() {
     if (Platform.isAndroid) return 'Nekoloc-Android-universal.apk';
-    if (Platform.isWindows) return 'nodeloc-windows.zip';
-    if (Platform.isMacOS) return 'nodeloc-macos.zip';
+    if (Platform.isWindows) return 'Nekoloc-Windows-Setup.exe';
+    if (Platform.isMacOS) return 'Nekoloc-macOS-Installer.pkg';
     if (Platform.isLinux) return 'nodeloc-linux.tar.gz';
     // iOS 未签名 IPA 无法自动安装，回退到 Release 页
     return null;
@@ -37,7 +37,9 @@ class UpdateInfo {
   String get platformDownloadUrl {
     final name = platformAssetName();
     if (name == null) return releaseUrl;
-    return assetUrls[name] ?? releaseUrl;
+    return assetUrls[name] ??
+        (Platform.isWindows ? assetUrls['nodeloc-windows.zip'] :
+         Platform.isMacOS ? assetUrls['nodeloc-macos.zip'] : null) ?? releaseUrl;
   }
 }
 
@@ -109,3 +111,4 @@ int _compareVersions(String a, String b) {
   }
   return 0;
 }
+

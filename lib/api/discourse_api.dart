@@ -316,8 +316,12 @@ class DiscourseApi {
     return result;
   }
 
-  Future<TopicDetail> topic(int id) async {
-    final d = await _getJson('/t/$id.json');
+  Future<TopicDetail> topic(int id, {int? postNumber}) async {
+    if (postNumber != null && postNumber < 1) {
+      throw ArgumentError.value(postNumber, 'postNumber', 'Must be positive');
+    }
+    final path = postNumber == null ? '/t/$id.json' : '/t/$id/$postNumber.json';
+    final d = await _getJson(path);
     return TopicDetail.fromJson(d);
   }
 
@@ -564,3 +568,4 @@ class DiscourseApi {
     return '$base$url';
   }
 }
+

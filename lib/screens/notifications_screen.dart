@@ -82,10 +82,11 @@ class NotificationsScreenState extends State<NotificationsScreen>
       final ok = await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => TopicDetailScreen(topicId: n.topicId!),
+          builder: (_) => TopicDetailScreen(topicId: n.topicId!,
+            initialPostNumber: n.postNumber != null && n.postNumber! > 0 ? n.postNumber : null),
         ),
       );
-      if (ok == null) _load();
+      if (ok == null && mounted) _load();
     }
   }
 
@@ -207,3 +208,4 @@ class NotificationsScreenState extends State<NotificationsScreen>
     );
   }
 }
+

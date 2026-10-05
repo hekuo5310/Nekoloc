@@ -31,7 +31,9 @@ List<String> _extractImages(String cookedHtml) {
 class TopicDetailScreen extends StatefulWidget {
   final int topicId;
   final int? initialPostId;
-  const TopicDetailScreen({super.key, required this.topicId, this.initialPostId});
+  final int? initialPostNumber;
+  const TopicDetailScreen({super.key, required this.topicId, this.initialPostId,
+    this.initialPostNumber});
 
   @override
   State<TopicDetailScreen> createState() => _TopicDetailScreenState();
@@ -40,6 +42,7 @@ class TopicDetailScreen extends StatefulWidget {
 class _TopicDetailScreenState extends State<TopicDetailScreen> {
   TopicDetail? _detail;
   int? _focusedPostId;
+  int? _focusedPostNumber;
   String? _focusError;
   String? _error;
   bool _loading = true;
@@ -58,6 +61,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   void initState() {
     super.initState();
     _focusedPostId = widget.initialPostId;
+    _focusedPostNumber = widget.initialPostNumber;
     _openedAt = DateTime.now();
     _apiRef = context.read<AppState>().api;
     _load();
@@ -109,8 +113,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     });
     try {
       final api = context.read<AppState>().api;
-      var d = await api.topic(widget.topicId);
+      var d = await api.topic(widget.topicId, postNumber: _focusedPostNumber);
       String? focusError;
+      if (_focusedPostNumber != null) {
+        final matches = d.posts.where((p) => p.postNumber == _focusedPostNumber &&
+          (p.topicId == null || p.topicId == widget.topicId)).toList();
+        if (matches.isNotEmpty) {
+          _focusedPostId = matches.first.id;
+        } else {
+          focusError = '无法定位 #$_focusedPostNumber：楼层不存在或无权访问';
+        }
+      }
       final target = _focusedPostId;
       if (target != null && !d.posts.any((p) => p.id == target)) {
         try {
@@ -619,7 +632,13 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                         if (i == displayPosts.length) {
                           if (focused.isNotEmpty) {
                             return Center(child: TextButton.icon(
-                              onPressed: () => setState(() => _focusedPostId = null),
+                              onPressed: () {
+                                setState(() {
+                                  _focusedPostId = null;
+                                  _focusedPostNumber = null;
+                                });
+                                _load();
+                              },
                               icon: const Icon(Icons.forum_outlined), label: const Text('查看完整话题')));
                           }
                           if (d.posts.length < d.stream.length) {
@@ -1168,3 +1187,4 @@ class _ReactionChip extends StatelessWidget {
     );
   }
 }
+

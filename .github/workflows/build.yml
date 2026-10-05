@@ -29,6 +29,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - run: python3 -m pip install pillow
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: flutter pub get
       - run: flutter test
@@ -179,7 +180,9 @@ jobs:
         run: flutter create . --platforms=windows --org com.nodeloc --project-name nodeloc_app
 
       - name: Patch platform files
-        run: python scripts/patch_platforms.py
+        run: |
+          python -m pip install pillow
+          python scripts/patch_platforms.py
 
       - name: Pub get
         run: flutter pub get
@@ -191,11 +194,26 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath nodeloc-windows.zip
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $compiler)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          $version = ((Select-String '^version:' pubspec.yaml).Line -replace '^version:\s*', '').Split('+')[0]
+          & $compiler "/DAppVersion=$version" "/DSourceDir=$PWD\build\windows\x64\runner\Release" "/DOutputDir=$PWD" scripts/windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $testDir = Join-Path $env:RUNNER_TEMP 'Nekoloc-install-test'
+          $process = Start-Process "$PWD\Nekoloc-Windows-Setup.exe" -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$testDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or !(Test-Path "$testDir\nodeloc_app.exe") -or !(Test-Path "$testDir\data\flutter_assets")) { throw 'Installation smoke test failed' }
+          $process = Start-Process "$testDir\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or (Test-Path "$testDir\nodeloc_app.exe")) { throw 'Uninstall smoke test failed' }
 
       - uses: actions/upload-artifact@v4
         with:
           name: nodeloc-windows
-          path: nodeloc-windows.zip
+          path: |
+            Nekoloc-Windows-Setup.exe
+            nodeloc-windows.zip
           if-no-files-found: error
 
   # ============================================================ macOS + iOS
@@ -231,7 +249,8 @@ jobs:
           APP=$(find . -maxdepth 1 -name '*.app' -print -quit)
           echo "Packing: $APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$GITHUB_WORKSPACE/nodeloc-macos.zip"
-          ls -lh "$GITHUB_WORKSPACE/nodeloc-macos.zip"
+          VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' "$GITHUB_WORKSPACE/pubspec.yaml")
+          bash "$GITHUB_WORKSPACE/scripts/package_macos.sh" "$APP" "$VERSION" "$GITHUB_WORKSPACE"
 
       - name: Build iOS (unsigned)
         run: flutter build ios --release --no-codesign
@@ -245,7 +264,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nodeloc-macos
-          path: nodeloc-macos.zip
+          path: |
+            Nekoloc-macOS-Installer.pkg
+            nodeloc-macos.zip
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
@@ -337,3 +358,4 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+

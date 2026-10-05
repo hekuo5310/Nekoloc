@@ -50,3 +50,4 @@ String compactNumber(int n) {
   if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
   return '$n';
 }
+

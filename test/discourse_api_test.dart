@@ -5,6 +5,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nodeloc_app/api/discourse_api.dart';
 
 void main() {
+  test('notification post number requests exact floor even beyond initial batch', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final paths = <String>[];
+    server.listen((request) async {
+      paths.add(request.uri.path);
+      final targeted = request.uri.path == '/t/3/42.json';
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({'id': 3, 'title': 'Topic',
+        'post_stream': {'stream': [1, 88], 'posts': [
+          {'id': targeted ? 88 : 1, 'topic_id': 3,
+            'post_number': targeted ? 42 : 1, 'username': 'alice', 'cooked': 'Reply'}
+        ]}}));
+      await request.response.close();
+    });
+    final api = DiscourseApi(base: 'http://127.0.0.1:${server.port}', jar: CookieJar(), userApiKey: 'test');
+    expect((await api.topic(3)).posts.single.postNumber, 1);
+    final target = await api.topic(3, postNumber: 42);
+    expect(target.posts.single.id, 88);
+    expect(target.posts.single.postNumber, 42);
+    expect(paths, ['/t/3.json', '/t/3/42.json']);
+    await expectLater(api.topic(3, postNumber: 0), throwsArgumentError);
+    expect(paths, hasLength(2));
+  });
+
   test('poll transport repeats options[] and uses authenticated PUT/DELETE', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => server.close(force: true));
@@ -75,3 +100,4 @@ void main() {
     expect(urls.last.queryParameters['page'], '3');
   });
 }
+

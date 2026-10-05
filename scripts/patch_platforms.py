@@ -238,41 +238,39 @@ def patch_linux():
 
 # ---------------------------------------------------------------- 图标
 
-@step('应用图标（Android mipmap / iOS & macOS AppIcon）')
 def make_icons():
-    try:
-        from PIL import Image
-    except Exception:
-        print('  PIL 不可用，跳过图标生成')
-        return
-    src_p = 'assets/icon/app_icon.png'
-    if not os.path.exists(src_p):
-        raise FileNotFoundError(src_p)
-    src = Image.open(src_p).convert('RGBA')
-
+    from PIL import Image
+    src = Image.open('assets/icon/app_icon.png').convert('RGBA')
     if os.path.isdir('android/app/src/main/res'):
-        sizes = {'mdpi': 48, 'hdpi': 72, 'xhdpi': 96, 'xxhdpi': 144, 'xxxhdpi': 192}
-        for bucket, px in sizes.items():
-            d = f'android/app/src/main/res/mipmap-{bucket}'
-            os.makedirs(d, exist_ok=True)
-            src.resize((px, px), Image.LANCZOS).save(f'{d}/ic_launcher.png')
-
-    for platform, folder in [('ios', 'ios/Runner/Assets.xcassets/AppIcon.appiconset'),
-                             ('macos', 'macos/Runner/Assets.xcassets/AppIcon.appiconset')]:
+        for bucket, px in {'mdpi': 48, 'hdpi': 72, 'xhdpi': 96, 'xxhdpi': 144, 'xxxhdpi': 192}.items():
+            folder = f'android/app/src/main/res/mipmap-{bucket}'
+            os.makedirs(folder, exist_ok=True)
+            src.resize((px, px), Image.Resampling.LANCZOS).save(f'{folder}/ic_launcher.png')
+    if os.path.isdir('windows/runner/resources'):
+        src.resize((256, 256), Image.Resampling.LANCZOS).save(
+            'windows/runner/resources/app_icon.ico', sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)])
+    for platform in ('ios', 'macos'):
+        folder = f'{platform}/Runner/Assets.xcassets/AppIcon.appiconset'
         if not os.path.isdir(folder):
             continue
-        src.resize((1024, 1024), Image.LANCZOS).save(f'{folder}/icon-1024.png')
-        write(f'{folder}/contents.json', json.dumps({
-            'images': [
-                {
-                    'filename': 'icon-1024.png',
-                    'idiom': 'universal',
-                    'platform': platform,
-                    'size': '1024x1024',
-                }
-            ],
-            'info': {'author': 'xcode', 'version': 1},
-        }, indent=2))
+        specs = []
+        if platform == 'macos':
+            specs = [('mac', n, scale) for n in (16, 32, 128, 256, 512) for scale in (1, 2)]
+        else:
+            specs = [('iphone', n, scale) for n in (20, 29, 40, 60) for scale in (2, 3)]
+            specs += [('ipad', n, scale) for n in (20, 29, 40, 76) for scale in (1, 2)]
+            specs += [('ipad', 83.5, 2), ('ios-marketing', 1024, 1)]
+        images = []
+        # Apple app icons must be opaque. Preserve the uploaded white background.
+        opaque = Image.new('RGB', src.size, 'white')
+        opaque.paste(src, mask=src.getchannel('A'))
+        for idiom, size, scale in specs:
+            px = round(size * scale)
+            name = f'icon-{px}.png'
+            opaque.resize((px, px), Image.Resampling.LANCZOS).save(f'{folder}/{name}')
+            images.append({'idiom': idiom, 'size': f'{size}x{size}', 'scale': f'{scale}x', 'filename': name})
+        write(f'{folder}/Contents.json', json.dumps({'images': images,
+            'info': {'author': 'xcode', 'version': 1}}, indent=2))
 
 
 if __name__ == '__main__':
@@ -294,3 +292,4 @@ if __name__ == '__main__':
         for fn in jobs.values():
             fn()
     print('平台补丁完成。')
+

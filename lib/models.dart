@@ -696,3 +696,4 @@ int? bookmarkIdForPost(List<BookmarkItem> bookmarks, int postId, int topicId,
   }
   return null;
 }
+
