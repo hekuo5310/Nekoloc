@@ -83,16 +83,16 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate and patch Android project
-        run: |
-          flutter create . --platforms=android --org com.nodeloc --project-name nodeloc_app
-          python3 -m pip install pillow
-          python3 scripts/patch_platforms.py
       - name: Run tests
         run: |
           python3 -m unittest discover -s scripts -p 'test_*.py'
           flutter pub get
           flutter test
+      - name: Generate and patch Android project
+        run: |
+          flutter create . --platforms=android --org com.nodeloc --project-name nodeloc_app
+          python3 -m pip install pillow
+          python3 scripts/patch_platforms.py
       - name: Decode upload keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
