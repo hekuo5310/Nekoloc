@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nekoloc-account-deletion",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "routes": [{"pattern": "closeac.d-dos.cc", "custom_domain": true}],
+  "observability": {"enabled": true, "logs": {"enabled": true, "invocation_logs": false}, "redact_query_string": true}
+}

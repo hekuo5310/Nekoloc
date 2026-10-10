@@ -1,0 +1,26 @@
+name: Account deletion page
+on:
+  pull_request:
+    paths: ['account-deletion/**', '.github/workflows/account-deletion.yml']
+  push:
+    branches: ['main', 'feat/account-deletion-page']
+    paths: ['account-deletion/**', '.github/workflows/account-deletion.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: account-deletion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: account-deletion/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build:check

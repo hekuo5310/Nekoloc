@@ -1,0 +1,3 @@
+NODELOC_CLIENT_ID=replace-with-client-id
+NODELOC_CLIENT_SECRET=replace-with-client-secret
+SESSION_SECRET=replace-with-32-random-bytes-base64url
