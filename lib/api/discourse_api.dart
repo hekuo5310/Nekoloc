@@ -722,6 +722,52 @@ class DiscourseApi {
     }
   }
 
+  // ---------------------------------------------------------------- 账号：升级进度 / 两步验证
+
+  Future<UpgradeProgress> upgradeProgress(String username) async {
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}/upgrade-progress.json');
+    return UpgradeProgress.fromJson(d);
+  }
+
+  Future<List<TotpDevice>> totpDevices() async {
+    final d = await _mutate('POST', '/u/second_factors.json');
+    return ((d['totps'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(TotpDevice.fromJson)
+        .toList();
+  }
+
+  /// 生成 TOTP 密钥。返回 (密钥, 二维码 data URL)。
+  Future<({String key, String? qr})> createTotp() async {
+    final d = await _mutate('POST', '/u/create_second_factor_totp.json');
+    final key = d['key']?.toString();
+    if (key == null || key.isEmpty) {
+      throw ApiException(d['error']?.toString() ?? '无法生成验证密钥，请稍后重试');
+    }
+    return (key: key, qr: d['qr']?.toString());
+  }
+
+  /// 用验证器上的 6 位动态码确认启用。
+  Future<void> enableTotp(String token, String name) async {
+    await _mutate('POST', '/u/enable_second_factor_totp.json', data: {
+      'second_factor_token': token,
+      'name': name,
+    });
+  }
+
+  Future<void> disableSecondFactor() async {
+    await _mutate('PUT', '/u/disable_second_factor.json');
+  }
+
+  Future<List<String>> generateBackupCodes() async {
+    final d = await _mutate('PUT', '/u/second_factors_backup.json');
+    final codes = d['backup_codes'];
+    if (codes is! List || codes.isEmpty) {
+      throw ApiException(d['error']?.toString() ?? '备用码生成失败，请稍后重试');
+    }
+    return codes.map((c) => c.toString()).toList();
+  }
+
   // ---------------------------------------------------------------- 工具
 
   /// 头像模板 -> 完整 URL

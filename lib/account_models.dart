@@ -103,3 +103,96 @@ class DirectoryApp {
         homeUrl: json['home_url']?.toString(),
       );
 }
+
+/// 升级进度中的一条要求。`group` 决定它属于哪个分区（standing / activity / recent / all_time）。
+class UpgradeCondition {
+  final String label;
+  final String text;
+  final String scope;
+  final String group;
+  final String comparison;
+  final int value;
+  final int target;
+  final bool met;
+
+  const UpgradeCondition({
+    required this.label,
+    required this.text,
+    required this.scope,
+    required this.group,
+    required this.comparison,
+    required this.value,
+    required this.target,
+    required this.met,
+  });
+
+  factory UpgradeCondition.fromJson(Map json) => UpgradeCondition(
+        label: json['label']?.toString() ?? '',
+        text: json['text']?.toString() ?? '',
+        scope: json['scope']?.toString() ?? '',
+        group: json['group']?.toString() ?? '',
+        comparison: json['comparison']?.toString() ?? 'min',
+        value: _int(json['value']),
+        target: _int(json['target']),
+        met: flexBool(json['met']),
+      );
+}
+
+class UpgradeProgress {
+  final int currentLevel;
+  final String? currentLevelName;
+  final int? nextLevel;
+  final String? nextLevelName;
+  final List<UpgradeCondition> conditions;
+  final int totalConditions;
+  final int metCount;
+  final bool maxLevelReached;
+  final String? message;
+
+  const UpgradeProgress({
+    required this.currentLevel,
+    this.currentLevelName,
+    this.nextLevel,
+    this.nextLevelName,
+    this.conditions = const [],
+    this.totalConditions = 0,
+    this.metCount = 0,
+    this.maxLevelReached = false,
+    this.message,
+  });
+
+  double get fraction =>
+      totalConditions <= 0 ? 0 : (metCount / totalConditions).clamp(0.0, 1.0);
+
+  bool get allMet => totalConditions > 0 && metCount == totalConditions;
+
+  factory UpgradeProgress.fromJson(Map json) => UpgradeProgress(
+        currentLevel: _int(json['current_level']),
+        currentLevelName: json['current_level_name']?.toString(),
+        nextLevel: json['next_level'] == null ? null : _int(json['next_level']),
+        nextLevelName: json['next_level_name']?.toString(),
+        conditions: ((json['conditions'] as List?) ?? const [])
+            .whereType<Map>()
+            .map(UpgradeCondition.fromJson)
+            .toList(),
+        totalConditions: _int(json['total_conditions']),
+        metCount: _int(json['met_count']),
+        maxLevelReached: flexBool(json['max_level_reached']),
+        message: json['message']?.toString(),
+      );
+}
+
+/// 两步验证的 TOTP 设备。
+class TotpDevice {
+  final int id;
+  final String name;
+  final String? lastUsed;
+
+  const TotpDevice({required this.id, required this.name, this.lastUsed});
+
+  factory TotpDevice.fromJson(Map json) => TotpDevice(
+        id: _int(json['id']),
+        name: json['name']?.toString() ?? '验证器',
+        lastUsed: json['last_used']?.toString(),
+      );
+}

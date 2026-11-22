@@ -9,6 +9,8 @@ import 'profile_edit_screen.dart';
 import 'badges_screen.dart';
 import 'points_history_screen.dart';
 import 'apps_screen.dart';
+import 'security_screen.dart';
+import 'upgrade_progress_screen.dart';
 import '../models.dart';
 import '../update_checker.dart';
 import '../util.dart';
@@ -248,6 +250,26 @@ class _ProfileScreenState extends State<ProfileScreen>
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const AppsScreen()),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.shield_outlined),
+                    title: const Text('账号安全'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SecurityScreen()),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.trending_up),
+                    title: const Text('升级进度'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UpgradeProgressScreen()),
                     ),
                   ),
                 ],
