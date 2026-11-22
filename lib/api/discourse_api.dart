@@ -776,8 +776,12 @@ class DiscourseApi {
   }
 
   /// 发送聊天消息，返回新消息的 id（站点只返回 id，内容由下一次拉取补齐）。
-  Future<int?> sendChatMessage(int channelId, String message) async {
-    final d = await _mutate('POST', '/chat/$channelId.json', data: {'message': message});
+  /// [uploadIds] 为图片附件的上传 id。
+  Future<int?> sendChatMessage(int channelId, String message, {List<int> uploadIds = const []}) async {
+    final d = await _mutate('POST', '/chat/$channelId.json', data: {
+      'message': message,
+      if (uploadIds.isNotEmpty) 'upload_ids': uploadIds,
+    });
     return _cint(d['message_id']) == 0 ? null : _cint(d['message_id']);
   }
 
@@ -926,6 +930,31 @@ class DiscourseApi {
   Future<String?> requestPasswordReset(String login) async {
     final d = await _mutate('POST', '/session/forgot_password.json', data: {'login': login.trim()});
     return d['message']?.toString();
+  }
+
+  /// 编辑自己发送的聊天消息。
+  Future<void> editChatMessage(int channelId, int messageId, String text) async {
+    await _mutate('PUT', '/chat/api/channels/$channelId/messages/$messageId', data: {'message': text});
+  }
+
+  /// 删除自己发送的聊天消息。
+  Future<void> deleteChatMessage(int channelId, int messageId) async {
+    await _mutate('DELETE', '/chat/api/channels/$channelId/messages/$messageId');
+  }
+
+  Future<List<ChatUser>> chatMembers(int channelId) async {
+    final d = await _getJson('/chat/api/channels/$channelId/memberships.json', query: {'limit': 50});
+    return ((d['memberships'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((m) => m['user'])
+        .whereType<Map>()
+        .map(ChatUser.fromJson)
+        .toList();
+  }
+
+  /// 离开频道（取消订阅后它会从列表中消失）。
+  Future<void> leaveChatChannel(int channelId) async {
+    await _mutate('DELETE', '/chat/api/channels/$channelId/memberships/me');
   }
 
   Future<List<dynamic>> _getList(String path) async {

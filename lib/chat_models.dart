@@ -52,6 +52,7 @@ class ChatMessage {
   final ChatUser? user;
   final DateTime? createdAt;
   final bool deleted;
+  final List<String> imageUrls;
 
   const ChatMessage({
     required this.id,
@@ -59,6 +60,7 @@ class ChatMessage {
     this.user,
     this.createdAt,
     this.deleted = false,
+    this.imageUrls = const [],
   });
 
   factory ChatMessage.fromJson(Map json) {
@@ -69,6 +71,11 @@ class ChatMessage {
       user: u is Map ? ChatUser.fromJson(u) : null,
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
       deleted: json['deleted_at'] != null,
+      imageUrls: ((json['uploads'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((u) => u['url']?.toString() ?? '')
+          .where((u) => u.isNotEmpty)
+          .toList(),
     );
   }
 }
