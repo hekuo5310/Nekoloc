@@ -11,6 +11,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../composer_tools.dart';
 import '../plugin_drafts.dart';
+import '../widgets/gif_picker_sheet.dart';
 import '../widgets/plugin_composer_options.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
@@ -220,6 +221,30 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
   void _prefix(String prefix) {
     _contentCtrl.value = prefixLines(_contentCtrl.value, prefix);
+    setState(() => _preview = false);
+    _contentFocus.requestFocus();
+  }
+
+  /// 在光标处插入 GIF（Markdown 图片语法）。没有密钥时提示去设置里填写。
+  Future<void> _insertGif() async {
+    final app = context.read<AppState>();
+    if (app.klipyApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先在设置中填写 GIF 搜索密钥')),
+      );
+      return;
+    }
+    final url = await showGifPicker(context, app.klipyApiKey);
+    if (url == null || !mounted) return;
+    final text = _contentCtrl.text;
+    final sel = _contentCtrl.selection;
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : text.length;
+    final insert = '\n![GIF]($url)\n';
+    _contentCtrl.value = TextEditingValue(
+      text: text.replaceRange(start, end, insert),
+      selection: TextSelection.collapsed(offset: start + insert.length),
+    );
     setState(() => _preview = false);
     _contentFocus.requestFocus();
   }
@@ -498,6 +523,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   IconButton(tooltip: '代码块', onPressed: _busy ? null : () => _format('\n```\n', '\n```\n', placeholder: '代码'), icon: const Icon(Icons.code)),
                   IconButton(tooltip: '链接', onPressed: _busy ? null : () => _format('[', '](https://)', placeholder: '链接文字'), icon: const Icon(Icons.link)),
                   IconButton(tooltip: '插入投票', onPressed: _busy ? null : _insertPoll, icon: const Icon(Icons.poll_outlined)),
+                  IconButton(tooltip: 'GIF', onPressed: _busy ? null : _insertGif, icon: const Icon(Icons.gif_box_outlined)),
                   TextButton.icon(onPressed: () => setState(() => _preview = !_preview),
                     icon: Icon(_preview ? Icons.edit_outlined : Icons.visibility_outlined),
                     label: Text(_preview ? '继续编辑' : '预览')),

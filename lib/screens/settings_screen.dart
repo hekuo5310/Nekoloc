@@ -183,6 +183,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _editKlipyKey(String current) async {
+    final ctl = TextEditingController(text: current);
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('GIF 搜索密钥'),
+        content: TextField(
+          controller: ctl,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: '密钥',
+            helperText: '密钥只保存在本机，不会上传到站点',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: const Text('保存')),
+        ],
+      ),
+    );
+    if (saved != null && mounted) {
+      context.read<AppState>().setKlipyApiKey(saved);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -193,6 +218,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(10),
         children: [
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 5),
+            child: ListTile(
+              leading: const Icon(Icons.gif_box_outlined),
+              title: const Text('GIF 搜索密钥'),
+              subtitle: Text(
+                app.klipyApiKey.isEmpty
+                    ? '未设置。填写后可在发帖时搜索 GIF'
+                    : '已设置（仅保存在本机）',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _editKlipyKey(app.klipyApiKey),
+            ),
+          ),
           if (app.isLoggedIn)
             Card(
               margin: const EdgeInsets.symmetric(vertical: 5),

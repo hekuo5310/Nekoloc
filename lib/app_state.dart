@@ -75,6 +75,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     };
     _userApiKey = prefs.getString('user_api_key');
     postSourceLevel = prefs.getInt('post_source_level') ?? 4;
+    klipyApiKey = prefs.getString('klipy_api_key') ?? '';
     pushSettings = pushSettingsFromPrefs(prefs);
     await _createApi();
     try {
@@ -146,6 +147,15 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {
       // 失败就等下一次轮询，不打扰用户。
     }
+  }
+
+  /// GIF 搜索密钥（Klipy），由用户在设置中填写，只保存在本机。
+  String klipyApiKey = '';
+
+  void setKlipyApiKey(String key) {
+    klipyApiKey = key.trim();
+    prefs.setString('klipy_api_key', klipyApiKey);
+    notifyListeners();
   }
 
   /// 当前会话的站点 Cookie（用于把登录状态交给应用内的 WebView，例如小程序外壳）。
