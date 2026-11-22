@@ -957,6 +957,23 @@ class DiscourseApi {
     await _mutate('DELETE', '/chat/api/channels/$channelId/memberships/me');
   }
 
+  /// 嵌套视图的根回复（n/{slug}/{id}.json）。slug 只影响网址，真正按 id 解析。
+  Future<({Map<String, dynamic> raw, List<Map> roots, bool hasMore})> nestedTopic(
+      int topicId, {String slug = 'topic', String sort = 'top', int page = 0}) async {
+    final d = await _getJson('/n/$slug/$topicId.json', query: {'sort': sort, 'page': page});
+    final roots = ((d['roots'] as List?) ?? const []).whereType<Map>().toList();
+    return (raw: d, roots: roots, hasMore: flexBool(d['has_more_roots']));
+  }
+
+  /// 某楼层的直接回复（n/{slug}/{id}/children/{postNumber}.json）。
+  Future<({List<Map> children, bool hasMore})> nestedChildren(
+      int topicId, int postNumber, {String slug = 'topic', String sort = 'top', int page = 0}) async {
+    final d = await _getJson('/n/$slug/$topicId/children/$postNumber.json',
+        query: {'sort': sort, 'page': page});
+    final children = ((d['children'] as List?) ?? const []).whereType<Map>().toList();
+    return (children: children, hasMore: flexBool(d['has_more']));
+  }
+
   Future<List<dynamic>> _getList(String path) async {
     try {
       final resp = await _dio.get(path);

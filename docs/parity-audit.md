@@ -5,7 +5,7 @@
 | 参考页面 | 状态 | 备注 |
 | --- | --- | --- |
 | FeedScreen / TopicList | 已有 | |
-| ReaderScreen（嵌套回复树） | 部分 | 我们是平铺列表，未实现 `/n/topic` 嵌套树 |
+| ReaderScreen（嵌套回复树） | 部分 | 平铺阅读器为主；嵌套视图页面可按热门、最新、最早排序并逐楼展开。阅读器内无嵌套切换 |
 | ComposeScreen | 已有 | 含红包、抽奖、GIF、图片编辑 |
 | ImageEditorScreen | 已有 | 旋转、翻转、裁剪、缩放 |
 | VideoEditorScreen / VideoFeed | 待做 | 需要平台媒体管线 |
@@ -21,7 +21,7 @@
 | 关注者列表 | 不适用 | 参考项目只显示数量，没有列表页 |
 | BlockedUsersScreen | 已有 | |
 | PostSourceScreen（发帖设备信息） | 已有 | 设置中的档位 |
-| InboxScreen / ChatConversationScreen | 部分 | 频道与消息、实时推送已有；群管理、线程、编辑删除、附件待做 |
+| InboxScreen / ChatConversationScreen | 部分 | 频道、消息、实时推送、编辑删除、图片附件、成员、离开频道已有；线程与群管理（设置成员、角色）待做 |
 | MessagesScreen（私信） | 已有 | |
 | NotificationsScreen | 已有 | |
 | NotificationPreferencesScreen | 已有 | 偏好页 |

@@ -11,6 +11,7 @@ import '../models.dart';
 import '../reactions.dart';
 import '../theme.dart';
 import '../plugin_actions.dart';
+import 'nested_topic_screen.dart';
 import '../widgets/plugin_strip.dart';
 import '../util.dart';
 import '../widgets/common.dart';
@@ -619,6 +620,22 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                           : null,
                     ),
             ),
+          IconButton(
+            tooltip: '嵌套视图',
+            icon: const Icon(Icons.account_tree_outlined),
+            onPressed: d == null
+                ? null
+                : () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => NestedTopicScreen(
+                          topicId: d.id,
+                          title: d.title,
+                          slug: d.slug,
+                        ),
+                      ),
+                    ),
+          ),
           IconButton(
             tooltip: '在浏览器中打开',
             icon: const Icon(Icons.open_in_new),
