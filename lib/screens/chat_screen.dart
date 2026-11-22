@@ -80,8 +80,8 @@ class _ChatChannelsScreenState extends State<ChatChannelsScreen> {
   }
 }
 
-/// 单个频道的会话。站点的实时推送未接入，这里每 8 秒拉取一次新消息；
-/// 发送后立即刷新，所以自己发的消息不需要等待下一次轮询。
+/// 单个频道的会话。收到 MessageBus 的频道事件时立即刷新；未连接时每 20 秒拉取一次兜底。
+/// 发送后也会立即刷新。
 class ChatConversationScreen extends StatefulWidget {
   final ChatChannel channel;
 
@@ -92,11 +92,13 @@ class ChatConversationScreen extends StatefulWidget {
 }
 
 class _ChatConversationScreenState extends State<ChatConversationScreen> {
-  static const _pollInterval = Duration(seconds: 8);
+  // 实时推送可用时以推送为准；定时拉取只作为兜底，间隔放宽到 20 秒。
+  static const _pollInterval = Duration(seconds: 20);
 
   final _input = TextEditingController();
   final _scroll = ScrollController();
   Timer? _timer;
+  void Function()? _busCancel;
   List<ChatMessage> _messages = const [];
   bool _loading = true;
   bool _sending = false;
@@ -108,11 +110,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     super.initState();
     _fetch(initial: true);
     _timer = Timer.periodic(_pollInterval, (_) => _fetch());
+    _busCancel = context.read<AppState>().bus.subscribe(
+          '/chat/${widget.channel.id}',
+          () => _fetch(),
+        );
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _busCancel?.call();
     _input.dispose();
     _scroll.dispose();
     super.dispose();

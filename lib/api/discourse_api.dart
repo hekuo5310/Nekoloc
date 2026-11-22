@@ -780,6 +780,35 @@ class DiscourseApi {
     return _cint(d['message_id']) == 0 ? null : _cint(d['message_id']);
   }
 
+  /// MessageBus 长轮询。服务端有新事件时立即返回，否则约 25 秒后返回空。
+  Future<String> messageBusPoll(String clientId, Map<String, int> positions, int seq) async {
+    if (userApiKey == null) await ensureCsrf();
+    final body = [
+      for (final e in positions.entries) '${Uri.encodeComponent(e.key)}=${e.value}',
+      '__seq=$seq',
+    ].join('&');
+    try {
+      final resp = await _dio.post<String>(
+        '/message-bus/$clientId/poll',
+        data: body,
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          responseType: ResponseType.plain,
+          receiveTimeout: const Duration(seconds: 40),
+          headers: {
+            'Dont-Chunk': 'true',
+            if (_csrf != null && userApiKey == null) 'X-CSRF-Token': _csrf,
+          },
+        ),
+      );
+      final code = resp.statusCode ?? 500;
+      if (code >= 400) throw ApiException(_fallbackMessage(code), code);
+      return resp.data ?? '';
+    } on DioException catch (e) {
+      throw _dioError(e);
+    }
+  }
+
   Future<List<dynamic>> _getList(String path) async {
     try {
       final resp = await _dio.get(path);

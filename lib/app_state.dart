@@ -11,6 +11,7 @@ import 'models.dart';
 import 'oauth/rsa.dart';
 import 'oauth/webview_login.dart';
 import 'push_poller.dart';
+import 'message_bus.dart';
 import 'push_watch.dart';
 import 'system_notifier.dart';
 import 'update_checker.dart';
@@ -29,9 +30,31 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   /// 应用是否在前台。前台用应用内横幅提醒，后台用系统通知。
   bool _foreground = true;
 
+  /// 实时推送（MessageBus）：聊天消息与新通知。只在登录且位于前台时运行。
+  final MessageBusClient bus = MessageBusClient();
+  void Function()? _notificationCancel;
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) {
+      _startBus();
+    } else {
+      bus.stop();
+    }
+  }
+
+  void _startBus() {
+    final me = user;
+    if (me == null || !_foreground) {
+      bus.stop();
+      _notificationCancel?.call();
+      _notificationCancel = null;
+      return;
+    }
+    // 新通知到达时立即拉取一次，不必等 15 分钟的定时轮询。
+    _notificationCancel ??= bus.subscribe('/notification/${me.id}', () => pollPush());
+    bus.start(api);
   }
 
   /// 站点固定为 NodeLoc 官方
@@ -122,6 +145,7 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   void _restartPushPolling() {
     _pushTimer?.cancel();
     _pushTimer = null;
+    _startBus();
     if (!isLoggedIn) {
       unawaited(scheduleBackgroundPush(false));
       return;
@@ -267,6 +291,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     await _jar?.deleteAll();
     user = null;
     _blocked.clear();
+    bus.stop();
+    _notificationCancel?.call();
+    _notificationCancel = null;
     _pushTimer?.cancel();
     _pushTimer = null;
     await resetPushState(prefs);
