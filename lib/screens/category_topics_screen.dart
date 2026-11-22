@@ -6,6 +6,7 @@ import '../models.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 某分类下的话题列表（无限滚动）
 class CategoryTopicsScreen extends StatefulWidget {
@@ -64,7 +65,7 @@ class _CategoryTopicsScreenState extends State<CategoryTopicsScreen> {
       setState(() {
         _topics
           ..clear()
-          ..addAll(r.topics);
+          ..addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users
           ..clear()
           ..addAll(r.users);
@@ -92,7 +93,7 @@ class _CategoryTopicsScreenState extends State<CategoryTopicsScreen> {
           .categoryTopics(widget.categoryId, page: _page + 1);
       if (!mounted) return;
       setState(() {
-        _topics.addAll(r.topics);
+        _topics.addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users.addAll(r.users);
         _hasMore = r.hasMore;
         _page += 1;

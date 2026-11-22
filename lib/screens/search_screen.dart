@@ -7,6 +7,7 @@ import '../util.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -49,7 +50,7 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final r = await context.read<AppState>().api.search(query);
       if (!mounted || requestId != _requestId) return;
-      setState(() => _result = r);
+      setState(() => _result = r.withoutBlocked(context.read<AppState>().blockedUsernames));
     } catch (e) {
       if (mounted && requestId == _requestId) setState(() => _error = friendlyError(e));
     } finally {
@@ -67,7 +68,7 @@ class _SearchScreenState extends State<SearchScreen> {
       final existing = _result!.items;
       String key(SearchPostItem p) => p.id > 0 ? '${p.id}' : '${p.topicId}:${p.postNumber}';
       final seen = existing.map(key).toSet();
-      final added = r.items.where((p) => seen.add(key(p))).toList();
+      final added = r.withoutBlocked(context.read<AppState>().blockedUsernames).items.where((p) => seen.add(key(p))).toList();
       setState(() {
         _page++;
         _result = SearchResult(items: [...existing, ...added],

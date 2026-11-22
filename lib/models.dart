@@ -1,4 +1,5 @@
 import 'dart:ui' show Color;
+import 'plugins.dart';
 import 'polls.dart';
 export 'polls.dart';
 
@@ -266,6 +267,9 @@ class Post {
   final bool canVoteDown;
   final List<PostPoll> polls;
   final Map<String, List<String>> pollsVotes;
+  final List<PostReward> rewards;
+  final PostLottery? lottery;
+  final RedEnvelopeClaim? redEnvelopeClaim;
 
   Post({
     required this.id,
@@ -291,6 +295,9 @@ class Post {
     this.canVoteDown = false,
     this.polls = const [],
     this.pollsVotes = const {},
+    this.rewards = const [],
+    this.lottery,
+    this.redEnvelopeClaim,
   });
 
   factory Post.fromJson(dynamic json) {
@@ -333,6 +340,12 @@ class Post {
           if (entry.value is List)
             entry.key.toString(): (entry.value as List).whereType<String>().toList(),
       },
+      rewards: ((json['rewards'] as List?) ?? [])
+          .whereType<Map>().map(PostReward.fromJson).toList(),
+      lottery: json['lottery'] is Map ? PostLottery.fromJson(json['lottery']) : null,
+      redEnvelopeClaim: json['red_envelope_claim'] is Map
+          ? RedEnvelopeClaim.fromJson(json['red_envelope_claim'])
+          : null,
     );
   }
 
@@ -376,6 +389,9 @@ class Post {
         canVoteDown: canVoteDown ?? this.canVoteDown,
         polls: polls ?? this.polls,
         pollsVotes: pollsVotes ?? this.pollsVotes,
+        rewards: rewards,
+        lottery: lottery,
+        redEnvelopeClaim: redEnvelopeClaim,
       );
 
   /// Reaction responses must not overwrite concurrently changed poll or

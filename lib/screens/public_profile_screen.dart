@@ -90,13 +90,19 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       );
       if (confirmed != true) return;
     }
+    if (!mounted) return;
+    final app = context.read<AppState>();
+    final target = !_ignored;
+    // 乐观更新：先让楼层与列表立即生效，失败再回滚。
+    app.setBlocked(widget.username, target);
     setState(() => _busy = true);
     try {
-      await context.read<AppState>().api.setUserIgnored(widget.username, !_ignored);
+      await app.api.setUserIgnored(widget.username, target);
       if (!mounted) return;
-      setState(() => _ignored = !_ignored);
-      _hint(_ignored ? '已忽略用户' : '已取消忽略');
+      setState(() => _ignored = target);
+      _hint(target ? '已忽略用户' : '已取消忽略');
     } catch (e) {
+      app.setBlocked(widget.username, !target);
       _hint('操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);

@@ -36,6 +36,11 @@ class AppState extends ChangeNotifier {
   bool get isLoggedIn => user != null;
   DiscourseApi get api => _api ?? (throw StateError('API 未初始化'));
 
+  /// å½åè´¦å·å±è½ï¼å¿½ç¥ï¼çç¨æ·åãç»å½åä»ç«ç¹è¯»åï¼éåºæ¶æ¸ç©ºã
+  final Set<String> _blocked = {};
+  Set<String> get blockedUsernames => Set.unmodifiable(_blocked);
+  bool isBlocked(String? username) => username != null && _blocked.contains(username);
+
   UpdateInfo? updateInfo;
   bool _updateChecked = false;
 
@@ -83,7 +88,31 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       user = null;
     }
+    await reloadBlocked();
     notifyListeners();
+  }
+
+  /// ä»èªå·±çèµæè¯»åå¿½ç¥ååï¼æå¡ç«¯åªå¨æ¬äººèµæéè¿å ignored_usernamesï¼ã
+  /// å¤±è´¥æ¶ä¿çåååï¼é¿åä¸æ¬¡ç½ç»æå¨å°±æå·²å±è½çç¨æ·éæ°æ¾ç¤ºåºæ¥ã
+  Future<void> reloadBlocked() async {
+    final me = user?.username;
+    if (me == null) {
+      _blocked.clear();
+      return;
+    }
+    try {
+      final profile = await api.userProfile(me);
+      _blocked
+        ..clear()
+        ..addAll(profile.ignoredUsernames);
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  /// ä¹è§æ´æ°ï¼è°ç¨æ¹åæ¹æ¬å°ååï¼å¤±è´¥æ¶åç¨åä¸æ¹æ³åæ»ã
+  void setBlocked(String username, bool blocked) {
+    final changed = blocked ? _blocked.add(username) : _blocked.remove(username);
+    if (changed) notifyListeners();
   }
 
   Future<void> login(String login, String password, String? totp) async {
@@ -158,6 +187,7 @@ class AppState extends ChangeNotifier {
     await prefs.remove('user_api_key');
     await _jar?.deleteAll();
     user = null;
+    _blocked.clear();
     notifyListeners();
   }
 

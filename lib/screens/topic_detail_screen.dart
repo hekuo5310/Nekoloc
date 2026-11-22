@@ -10,6 +10,7 @@ import '../api/discourse_api.dart';
 import '../models.dart';
 import '../reactions.dart';
 import '../theme.dart';
+import '../widgets/plugin_strip.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
@@ -18,6 +19,7 @@ import 'composer_screen.dart';
 import 'tag_topics_screen.dart';
 import 'public_profile_screen.dart';
 import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 提取 HTML 中所有 http(s) 图片地址（供全屏查看器翻页）
 List<String> _extractImages(String cookedHtml) {
@@ -114,7 +116,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     });
     try {
       final api = context.read<AppState>().api;
+      final blockedNow = context.read<AppState>().blockedUsernames;
       var d = await api.topic(widget.topicId, postNumber: _focusedPostNumber);
+      // 屏蔽用户的回复在拿到数据时就丢弃（主楼保留）。
+      d = _copyWithPosts(d, visiblePosts(d.posts, blockedNow));
       String? focusError;
       if (_focusedPostNumber != null) {
         final matches = d.posts.where((p) => p.postNumber == _focusedPostNumber &&
@@ -1043,6 +1048,7 @@ class _PostCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             body,
+            PostPluginStrip(post: post),
             if (!post.hidden)
               for (final poll in post.polls)
                 PollCard(

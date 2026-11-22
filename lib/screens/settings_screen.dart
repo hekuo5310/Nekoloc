@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
+import 'blocked_users_screen.dart';
 import '../mobile_source.dart';
 import '../theme.dart';
 import '../update_checker.dart';
@@ -191,6 +192,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(10),
         children: [
+          if (app.isLoggedIn)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: ListTile(
+                leading: const Icon(Icons.block),
+                title: const Text('屏蔽用户'),
+                subtitle: const Text('被屏蔽用户的话题、回复与搜索结果将不再显示',
+                    style: TextStyle(fontSize: 12)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BlockedUsersScreen()),
+                ),
+              ),
+            ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 5),
             child: Column(

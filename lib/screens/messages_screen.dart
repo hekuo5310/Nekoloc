@@ -7,6 +7,7 @@ import '../widgets/common.dart';
 import 'composer_screen.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 私信会话列表
 class MessagesScreen extends StatefulWidget {
@@ -65,7 +66,7 @@ class MessagesScreenState extends State<MessagesScreen>
       setState(() {
         _topics
           ..clear()
-          ..addAll(r.topics);
+          ..addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users
           ..clear()
           ..addAll(r.users);
@@ -91,7 +92,7 @@ class MessagesScreenState extends State<MessagesScreen>
           await app.api.privateMessages(app.user!.username, page: _page + 1);
       if (!mounted) return;
       setState(() {
-        _topics.addAll(r.topics);
+        _topics.addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users.addAll(r.users);
         _hasMore = r.hasMore;
         _page += 1;

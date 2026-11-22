@@ -9,6 +9,7 @@ import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 首页：话题流（最新 / 热门 / 新帖 / 未读）
 class TopicListScreen extends StatefulWidget {
@@ -72,7 +73,7 @@ class _TopicListScreenState extends State<TopicListScreen>
       setState(() {
         _topics
           ..clear()
-          ..addAll(result.topics);
+          ..addAll(result.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users
           ..clear()
           ..addAll(result.users);
@@ -110,7 +111,7 @@ class _TopicListScreenState extends State<TopicListScreen>
           await context.read<AppState>().api.topicList(_filter, page: _page + 1);
       if (!mounted) return;
       setState(() {
-        _topics.addAll(result.topics);
+        _topics.addAll(result.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users.addAll(result.users);
         _hasMore = result.hasMore;
         _page += 1;
