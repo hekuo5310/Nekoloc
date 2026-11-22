@@ -309,6 +309,31 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   }
 
   /// åä¸æ½å¥ï¼æå¡ç«¯è¿åææ°çæ½å¥ç¶æï¼åªæ¿æ¢è¿ä¸æ¥¼ã
+  /// 查看楼层的原始 Markdown（可选中复制）。
+  Future<void> _showPostSource(Post post) async {
+    final api = context.read<AppState>().api;
+    try {
+      final raw = await api.postRaw(post.id);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('#${post.postNumber} 源码'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(child: SelectableText(raw)),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+          ],
+        ),
+      );
+    } catch (e) {
+      _hint('无法读取源码：${friendlyError(e)}');
+    }
+  }
+
+  /// 参与抽奖：服务端返回最新的抽奖状态，只替换这一楼。
   Future<void> _joinLottery(Post post) async {
     final lottery = post.lottery;
     if (lottery == null) return;
@@ -544,6 +569,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         ? () => _rewardPost(post)
         : null,
     onLottery: context.read<AppState>().isLoggedIn ? () => _joinLottery(post) : null,
+    onSource: () => _showPostSource(post),
     onLike: () => _toggleLike(post),
     onShowReactions: () => _showReactionPicker(post),
     onReply: () => _reply(replyToPostNumber: post.postNumber,
@@ -883,9 +909,11 @@ class _PostCard extends StatelessWidget {
   final void Function(PostPoll, List<String>?) onPollVote;
   final VoidCallback? onReward;
   final VoidCallback? onLottery;
+  final VoidCallback? onSource;
   final Set<String> pollBusy;
 
   const _PostCard({
+    this.onSource,
     this.onReward,
     this.onLottery,
     required this.post,
@@ -1068,6 +1096,7 @@ class _PostCard extends StatelessWidget {
                   onSelected: (v) {
                     if (v == 'copy') onCopyLink();
                     if (v == 'edit') onEdit?.call();
+                    if (v == 'source') onSource?.call();
                     if (v == 'report') onReport();
                     if (v == 'bookmark') onBookmark();
                   },
@@ -1077,6 +1106,7 @@ class _PostCard extends StatelessWidget {
                       child: Text(post.bookmarked ? '取消收藏此楼层' : '收藏此楼层')),
                     if (onEdit != null)
                       const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
+                    const PopupMenuItem(value: 'source', child: Text('查看源码')),
                     const PopupMenuItem(value: 'report', child: Text('举报帖子')),
                   ],
                   icon: Icon(Icons.more_horiz, size: 20, color: muted),

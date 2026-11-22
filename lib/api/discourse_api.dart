@@ -6,6 +6,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
 import '../models.dart';
 import '../plugins.dart';
+import '../account_models.dart';
 
 /// 业务异常（展示给用户的错误信息）
 class ApiException implements Exception {
@@ -640,6 +641,85 @@ class DiscourseApi {
   static String _randomNonce() {
     final rng = Random.secure();
     return List.generate(16, (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  // ---------------------------------------------------------------- 账号：资料 / 徽章 / 积分明细 / 应用目录
+
+  /// 编辑个人资料（users#update）。字段为空字符串即表示清空。
+  Future<void> updateProfile(
+    String username, {
+    required String name,
+    required String bioRaw,
+    required String website,
+    required String location,
+    required String title,
+  }) async {
+    await _mutate('PUT', '/u/${Uri.encodeComponent(username)}.json', data: {
+      'name': name,
+      'bio_raw': bioRaw,
+      'website': website,
+      'location': location,
+      'title': title,
+    });
+  }
+
+  Future<List<UserBadge>> userBadges(String username) async {
+    final d = await _getJson('/user-badges/${Uri.encodeComponent(username)}.json');
+    return ((d['badges'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(UserBadge.fromJson)
+        .toList();
+  }
+
+  Future<PointsPage> pointsHistory(String username, {int page = 0}) async {
+    final d = await _getJson(
+      '/u/${Uri.encodeComponent(username)}/points-history.json',
+      query: {'page': page},
+    );
+    final entries = ((d['points_history'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(PointsEntry.fromJson)
+        .toList();
+    return PointsPage(entries: entries, hasMore: flexBool(d['has_more']));
+  }
+
+  /// 应用目录是裸数组（不是对象），单独处理。
+  Future<List<DirectoryApp>> appsDirectory() async {
+    final list = await _getList('/apps/directory.json');
+    return list.whereType<Map>().map(DirectoryApp.fromJson).toList();
+  }
+
+  Future<DirectoryApp> app(String slug) async {
+    final d = await _getJson('/apps/${Uri.encodeComponent(slug)}.json');
+    final inner = d['directory_app'];
+    return DirectoryApp.fromJson(inner is Map ? inner : d);
+  }
+
+  /// 自己资料的原始字段（编辑用）。cooked 版本会丢失 Markdown 格式，所以取 bio_raw。
+  Future<Map<String, String>> ownProfileFields(String username) async {
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}.json');
+    final user = d['user'];
+    final m = user is Map ? user : const {};
+    String s(String key) => m[key]?.toString() ?? '';
+    return {
+      'name': s('name'),
+      'bio_raw': s('bio_raw'),
+      'website': s('website'),
+      'location': s('location'),
+      'title': s('title'),
+    };
+  }
+
+  Future<List<dynamic>> _getList(String path) async {
+    try {
+      final resp = await _dio.get(path);
+      final code = resp.statusCode ?? 500;
+      if (code >= 400) throw ApiException(_fallbackMessage(code), code);
+      final data = resp.data;
+      return data is List ? data : const [];
+    } on DioException catch (e) {
+      throw _dioError(e);
+    }
   }
 
   // ---------------------------------------------------------------- 工具
