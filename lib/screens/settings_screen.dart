@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_state.dart';
 import '../push_watch.dart';
 import 'blocked_users_screen.dart';
+import 'preference_screen.dart';
 import '../mobile_source.dart';
 import '../theme.dart';
 import '../update_checker.dart';
@@ -218,6 +219,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(10),
         children: [
+          if (app.isLoggedIn)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: Column(children: [
+                for (final entry in const [
+                  (Icons.notifications_active_outlined, '通知偏好', PreferenceKind.notifications),
+                  (Icons.mail_outline, '邮件通知', PreferenceKind.email),
+                  (Icons.visibility_off_outlined, '隐私', PreferenceKind.privacy),
+                ]) ...[
+                  ListTile(
+                    leading: Icon(entry.$1),
+                    title: Text(entry.$2),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => PreferenceScreen(kind: entry.$3)),
+                    ),
+                  ),
+                  if (entry.$3 != PreferenceKind.privacy)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                ],
+              ]),
+            ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 5),
             child: ListTile(

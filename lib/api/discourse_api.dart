@@ -8,6 +8,7 @@ import '../models.dart';
 import '../plugins.dart';
 import '../account_models.dart';
 import '../chat_models.dart';
+import '../user_preferences.dart';
 
 /// 业务异常（展示给用户的错误信息）
 class ApiException implements Exception {
@@ -807,6 +808,19 @@ class DiscourseApi {
     } on DioException catch (e) {
       throw _dioError(e);
     }
+  }
+
+  /// 自己的账号偏好原始字段（user_option）。
+  Future<Map<String, dynamic>> ownUserOption(String username) async {
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}.json');
+    final user = d['user'];
+    final option = user is Map ? user['user_option'] : null;
+    return option is Map ? Map<String, dynamic>.from(option) : <String, dynamic>{};
+  }
+
+  /// 写入账号偏好。与资料共用 users#update，值用原生类型发送（布尔即 true/false）。
+  Future<void> updateUserOptions(String username, Map<String, dynamic> values) async {
+    await _mutate('PUT', '/u/${Uri.encodeComponent(username)}.json', data: values);
   }
 
   Future<List<dynamic>> _getList(String path) async {
