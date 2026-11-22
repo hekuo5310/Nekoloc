@@ -10,6 +10,8 @@ import 'package:markdown/markdown.dart' as md;
 import '../app_state.dart';
 import '../models.dart';
 import '../composer_tools.dart';
+import '../plugin_drafts.dart';
+import '../widgets/plugin_composer_options.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
 
@@ -56,6 +58,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
   String? _draftKey;
   Timer? _draftTimer;
   bool _submitted = false;
+  PluginDrafts _plugins = const PluginDrafts();
+
+  bool get _pluginsAllowed => !widget.isPrivateMessage && widget.editPostId == null;
   bool _preview = false;
 
   @override
@@ -268,7 +273,36 @@ class _ComposerScreenState extends State<ComposerScreen> {
       setState(() => _error = '请输入内容（支持 Markdown）');
       return;
     }
+    if (_pluginsAllowed && _plugins.error != null) {
+      setState(() => _error = _plugins.error);
+      return;
+    }
     await _doSubmit(title: title, raw: raw);
+  }
+
+  /// 红包与抽奖是站点插件，必须在话题或楼层存在之后再发第二个请求挂上去。
+  /// 失败只提示，不影响已经发布的内容。
+  Future<void> _attachPlugins(AppState app, Map<String, dynamic> result) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final topicId = int.tryParse('${result['topic_id'] ?? widget.topicId}');
+    final postId = int.tryParse('${result['id']}');
+    final env = _plugins.envelope;
+    final lot = _plugins.lottery;
+    if (env != null && topicId != null && topicId > 0) {
+      try {
+        await app.api.createRedEnvelope(topicId,
+            totalPoints: env.totalPoints, totalCount: env.totalCount);
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('红包创建失败：${friendlyError(e)}')));
+      }
+    }
+    if (lot != null && postId != null && postId > 0) {
+      try {
+        await app.api.createLottery(lot.toPayload(postId: postId, now: DateTime.now()));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('抽奖创建失败：${friendlyError(e)}')));
+      }
+    }
   }
 
   Future<void> _doSubmit({
@@ -311,6 +345,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
           mobileSource: mobileSource,
         );
       }
+      if (!mounted) return;
+      if (_pluginsAllowed) await _attachPlugins(app, result);
       if (!mounted) return;
       _submitted = true;
       _draftTimer?.cancel();
@@ -407,6 +443,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
                     maxLength: 120,
                     decoration: const InputDecoration(hintText: '标题'),
                   ),
+                  const SizedBox(height: 12),
+                ],
+                if (_pluginsAllowed) ...[
+                  PluginComposerOptions(onChanged: (d) => _plugins = d),
                   const SizedBox(height: 12),
                 ],
                 if (widget.isNewTopic) ...[

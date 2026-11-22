@@ -710,6 +710,44 @@ class DiscourseApi {
     };
   }
 
+  /// 为刚创建的话题挂上红包（discourse-red-envelope）。必须在话题存在之后调用。
+  Future<void> createRedEnvelope(int topicId, {required int totalPoints, required int totalCount}) async {
+    await _mutate('POST', '/red-envelopes.json', data: {
+      'topic_id': topicId,
+      'total_points': totalPoints,
+      'total_count': totalCount,
+    });
+  }
+
+  /// 为刚创建的楼层挂上抽奖（discourse-lottery）。必须在楼层存在之后调用。
+  Future<void> createLottery(Map<String, dynamic> payload) async {
+    await _mutate('POST', '/lottery', data: payload);
+  }
+
+  /// 节点别名是否可用（node/check-slug）。
+  Future<({bool available, String? message})> checkNodeSlug(String slug) async {
+    final d = await _getJson('/node/check-slug.json', query: {'slug': slug});
+    return (available: d['available'] == true, message: d['message']?.toString());
+  }
+
+  /// 创建节点（node/create）。返回新分类 id 由服务端决定，这里不依赖它。
+  Future<void> createNode({
+    required String name,
+    required String slug,
+    required String description,
+    required int parentCategoryId,
+    String? colorHex,
+  }) async {
+    await _mutate('POST', '/node/create', data: {
+      'name': name,
+      'slug': slug,
+      'description': description,
+      'parent_category_id': parentCategoryId,
+      if (colorHex != null && colorHex.isNotEmpty)
+        'color': colorHex.replaceAll('#', '').toUpperCase(),
+    });
+  }
+
   Future<List<dynamic>> _getList(String path) async {
     try {
       final resp = await _dio.get(path);

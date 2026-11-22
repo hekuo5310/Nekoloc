@@ -5,6 +5,7 @@ import '../api/friendly_error.dart';
 import '../app_state.dart';
 import '../models.dart';
 import 'category_topics_screen.dart';
+import 'create_node_screen.dart';
 
 /// 节点目录（NodeLoc 的社区节点，即 nodes.json 中的分类）。
 class NodesScreen extends StatefulWidget {
@@ -22,6 +23,15 @@ class _NodesScreenState extends State<NodesScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _create() async {
+    final parents = (_nodes ?? const <Category>[]).where((c) => c.parentId == null).toList();
+    final created = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => CreateNodeScreen(parents: parents)),
+    );
+    if (created == true) _load();
   }
 
   Future<void> _load() async {
@@ -87,7 +97,13 @@ class _NodesScreenState extends State<NodesScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('节点')),
+      appBar: AppBar(title: const Text('节点'), actions: [
+        IconButton(
+          tooltip: '创建节点',
+          icon: const Icon(Icons.add),
+          onPressed: _create,
+        ),
+      ]),
       body: body,
     );
   }
