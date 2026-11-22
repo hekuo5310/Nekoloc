@@ -1,5 +1,6 @@
 /// 账号与站点目录的只读模型：徽章、积分明细、应用目录。
 /// 字段口径对齐参考客户端的解码测试（站点的 JSON 使用下划线命名，部分布尔值会以 0/1 出现）。
+library;
 
 int _int(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 
@@ -194,5 +195,46 @@ class TotpDevice {
         id: _int(json['id']),
         name: json['name']?.toString() ?? '验证器',
         lastUsed: json['last_used']?.toString(),
+      );
+}
+
+/// 关联的第三方账号（如 GitHub、Google）。
+class AssociatedAccount {
+  final String name;
+  final String? description;
+
+  const AssociatedAccount({required this.name, this.description});
+
+  factory AssociatedAccount.fromJson(Map json) => AssociatedAccount(
+        name: json['name']?.toString() ?? '',
+        description: json['description']?.toString(),
+      );
+}
+
+/// 一个登录设备（登录令牌）。
+class AuthSession {
+  final int id;
+  final String deviceName;
+  final String? osName;
+  final String? clientName;
+  final DateTime? seenAt;
+  final bool isActive;
+
+  const AuthSession({
+    required this.id,
+    required this.deviceName,
+    this.osName,
+    this.clientName,
+    this.seenAt,
+    this.isActive = false,
+  });
+
+  factory AuthSession.fromJson(Map json) => AuthSession(
+        id: _int(json['id']),
+        deviceName: (json['device_name'] ?? json['client_name'] ?? '未知设备').toString(),
+        osName: json['os_name']?.toString(),
+        clientName: json['client_name']?.toString(),
+        seenAt: DateTime.tryParse(json['seen_at']?.toString() ?? ''),
+        isActive: flexBool(json['is_active']),
       );
 }

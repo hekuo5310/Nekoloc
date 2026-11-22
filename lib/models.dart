@@ -172,6 +172,9 @@ class Category {
   final int? parentId;
   final int? position;
   final bool readRestricted;
+  final int memberCount;
+  final bool isJoined;
+  final String? description;
 
   Category({
     required this.id,
@@ -184,6 +187,9 @@ class Category {
     this.parentId,
     this.position,
     this.readRestricted = false,
+    this.memberCount = 0,
+    this.isJoined = false,
+    this.description,
   });
 
   factory Category.fromJson(dynamic json) => Category(
@@ -197,6 +203,9 @@ class Category {
         parentId: toInt(json['parent_category_id']),
         position: toInt(json['position']),
         readRestricted: toBool(json['read_restricted']),
+        memberCount: toInt(json['member_count']) ?? 0,
+        isJoined: toBool(json['is_joined']),
+        description: json['description']?.toString(),
       );
 
   static String _stripTags(String s) => s

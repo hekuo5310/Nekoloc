@@ -823,6 +823,64 @@ class DiscourseApi {
     await _mutate('PUT', '/u/${Uri.encodeComponent(username)}.json', data: values);
   }
 
+  /// 关联账号与登录设备（仅本人可见）。
+  Future<({List<AssociatedAccount> accounts, List<AuthSession> sessions})> ownAccountDetail(
+      String username) async {
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}.json');
+    final user = d['user'] is Map ? d['user'] as Map : const {};
+    return (
+      accounts: ((user['associated_accounts'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(AssociatedAccount.fromJson)
+          .toList(),
+      sessions: ((user['user_auth_tokens'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(AuthSession.fromJson)
+          .toList(),
+    );
+  }
+
+  Future<void> revokeAssociatedAccount(String username, String provider) async {
+    await _mutate('POST', '/u/${Uri.encodeComponent(username)}/preferences/revoke-account.json',
+        data: {'provider_name': provider});
+  }
+
+  /// 撤销一个登录设备；[tokenId] 为 null 时撤销除当前设备外的所有设备。
+  Future<void> revokeAuthToken(String username, {int? tokenId}) async {
+    await _mutate('POST', '/u/${Uri.encodeComponent(username)}/preferences/revoke-auth-token.json',
+        data: {if (tokenId != null) 'token_id': tokenId});
+  }
+
+  /// 子节点列表（node/browse）。返回节点与是否还有更多。
+  Future<({List<Category> nodes, bool hasMore})> nodeBrowse(int parentId,
+      {int page = 0, int perPage = 30}) async {
+    final d = await _getJson('/node/browse/$parentId.json',
+        query: {'page': page, 'per_page': perPage});
+    final list = ((d['communities'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(Category.fromJson)
+        .toList();
+    final meta = d['meta'];
+    return (nodes: list, hasMore: meta is Map && flexBool(meta['has_more']));
+  }
+
+  /// 加入或退出节点。返回服务端的 joined 状态。
+  Future<bool> setNodeJoined(int categoryId, bool joined) async {
+    final d = joined
+        ? await _mutate('POST', '/node/join/$categoryId.json')
+        : await _mutate('DELETE', '/node/leave/$categoryId.json');
+    return d['joined'] == null ? joined : flexBool(d['joined']);
+  }
+
+  /// 搜索节点（分类）名称。
+  Future<List<Category>> searchNodes(String term) async {
+    final d = await _getJson('/categories/search.json', query: {'term': term, 'limit': 25});
+    return ((d['categories'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(Category.fromJson)
+        .toList();
+  }
+
   Future<List<dynamic>> _getList(String path) async {
     try {
       final resp = await _dio.get(path);

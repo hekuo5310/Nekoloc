@@ -1,4 +1,5 @@
 /// 账号偏好（user_option）。字段与取值对齐参考客户端 UserPreferencesRepository。
+library;
 
 enum LikeNotificationFrequency {
   always(0, '总是'),

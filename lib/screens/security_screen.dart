@@ -16,6 +16,8 @@ class SecurityScreen extends StatefulWidget {
 
 class _SecurityScreenState extends State<SecurityScreen> {
   List<TotpDevice>? _devices;
+  List<AssociatedAccount> _accounts = const [];
+  List<AuthSession> _sessions = const [];
   String? _error;
   bool _busy = false;
 
@@ -28,8 +30,17 @@ class _SecurityScreenState extends State<SecurityScreen> {
   Future<void> _load() async {
     setState(() => _error = null);
     try {
-      final devices = await context.read<AppState>().api.totpDevices();
-      if (mounted) setState(() => _devices = devices);
+      final app = context.read<AppState>();
+      final devices = await app.api.totpDevices();
+      final me = app.user?.username;
+      final detail = me == null ? null : await app.api.ownAccountDetail(me);
+      if (mounted) {
+        setState(() {
+          _devices = devices;
+          _accounts = detail?.accounts ?? const [];
+          _sessions = detail?.sessions ?? const [];
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = friendlyError(e));
     }
@@ -133,6 +144,45 @@ class _SecurityScreenState extends State<SecurityScreen> {
     }
   }
 
+  Future<bool> _confirm(String title, String body) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确定')),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  Future<void> _revokeAccount(AssociatedAccount a) async {
+    final app = context.read<AppState>();
+    if (!await _confirm('解除关联', '解除后将无法用「${a.name}」登录，确定吗？')) return;
+    final me = app.user?.username;
+    if (me == null) return;
+    await _run(() => app.api.revokeAssociatedAccount(me, a.name), '已解除关联');
+  }
+
+  Future<void> _revokeSession(AuthSession s) async {
+    final app = context.read<AppState>();
+    if (!await _confirm('退出设备', '将让「${s.deviceName}」退出登录，确定吗？')) return;
+    final me = app.user?.username;
+    if (me == null) return;
+    await _run(() => app.api.revokeAuthToken(me, tokenId: s.id), '已退出该设备');
+  }
+
+  Future<void> _revokeOthers() async {
+    final app = context.read<AppState>();
+    if (!await _confirm('退出其他设备', '除本机外的所有登录设备都会退出，确定吗？')) return;
+    final me = app.user?.username;
+    if (me == null) return;
+    await _run(() => app.api.revokeAuthToken(me), '已退出其他设备');
+  }
+
   Future<void> _disable() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -209,6 +259,41 @@ class _SecurityScreenState extends State<SecurityScreen> {
                         child: const Text('关闭两步验证'),
                       ),
                     ],
+                    const SizedBox(height: 24),
+                    Text('关联账号', style: Theme.of(context).textTheme.titleSmall),
+                    if (_accounts.isEmpty)
+                      const ListTile(dense: true, title: Text('没有关联的第三方账号')),
+                    for (final a in _accounts)
+                      ListTile(
+                        title: Text(a.name),
+                        subtitle: a.description == null ? null : Text(a.description!),
+                        trailing: TextButton(
+                          onPressed: _busy ? null : () => _revokeAccount(a),
+                          child: const Text('解除关联'),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    Text('登录设备', style: Theme.of(context).textTheme.titleSmall),
+                    if (_sessions.isEmpty)
+                      const ListTile(dense: true, title: Text('没有其他登录设备')),
+                    for (final s in _sessions)
+                      ListTile(
+                        leading: const Icon(Icons.devices_outlined),
+                        title: Text(s.deviceName),
+                        subtitle: Text([
+                          if (s.osName != null) s.osName!,
+                          if (s.seenAt != null) '最近活动 ${s.seenAt!.toLocal().toString().split('.').first}',
+                        ].join(' · '), style: const TextStyle(fontSize: 12)),
+                        trailing: TextButton(
+                          onPressed: _busy ? null : () => _revokeSession(s),
+                          child: const Text('退出'),
+                        ),
+                      ),
+                    if (_sessions.length > 1)
+                      OutlinedButton(
+                        onPressed: _busy ? null : _revokeOthers,
+                        child: const Text('退出其他所有设备'),
+                      ),
                   ],
                 ),
     );

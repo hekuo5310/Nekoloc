@@ -1,5 +1,6 @@
 /// 站点聊天（discourse-chat）的只读模型。
 /// 站点的消息 JSON 字段较多，这里只保留展示所需字段，未知字段一律忽略。
+library;
 
 int _cint(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
 

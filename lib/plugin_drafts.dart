@@ -4,6 +4,7 @@
 /// - 抽奖的 maxParticipants 为 0 表示不限人数，提交时以 1000000 哨兵值发送；
 /// - 抽奖的开奖时间不是相对天数，而是提交时刻算出的绝对时间（服务端只接受绝对时间）；
 /// - 红包和抽奖都是在话题或楼层创建之后，再发第二个请求挂上去的。
+library;
 
 const int lotteryMaxDrawDays = 30;
 const int lotteryMinTickets = 1;

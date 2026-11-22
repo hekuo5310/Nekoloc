@@ -4,7 +4,8 @@ import 'package:provider/provider.dart';
 import '../api/friendly_error.dart';
 import '../app_state.dart';
 import '../models.dart';
-import 'category_topics_screen.dart';
+import 'node_detail_screen.dart';
+import 'node_search_screen.dart';
 import 'create_node_screen.dart';
 
 /// 节点目录（NodeLoc 的社区节点，即 nodes.json 中的分类）。
@@ -84,12 +85,7 @@ class _NodesScreenState extends State<NodesScreen> {
               trailing: Text('${node.topicCount}'),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => CategoryTopicsScreen(
-                    categoryId: node.id,
-                    categoryName: node.name,
-                  ),
-                ),
+                MaterialPageRoute(builder: (_) => NodeDetailScreen(node: node)),
               ),
             );
           },
@@ -98,6 +94,14 @@ class _NodesScreenState extends State<NodesScreen> {
     }
     return Scaffold(
       appBar: AppBar(title: const Text('节点'), actions: [
+        IconButton(
+          tooltip: '搜索节点',
+          icon: const Icon(Icons.search),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NodeSearchScreen()),
+          ),
+        ),
         IconButton(
           tooltip: '创建节点',
           icon: const Icon(Icons.add),
