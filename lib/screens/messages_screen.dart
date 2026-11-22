@@ -6,6 +6,7 @@ import '../models.dart';
 import '../widgets/common.dart';
 import 'composer_screen.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 私信会话列表
 class MessagesScreen extends StatefulWidget {
@@ -76,7 +77,7 @@ class MessagesScreenState extends State<MessagesScreen>
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     }
   }

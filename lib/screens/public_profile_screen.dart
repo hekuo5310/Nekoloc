@@ -7,6 +7,7 @@ import '../models.dart';
 import '../widgets/common.dart';
 import 'composer_screen.dart';
 import 'user_topics_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 公开用户资料，关注与忽略状态均以站点账号为准。
 class PublicProfileScreen extends StatefulWidget {
@@ -50,7 +51,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
         _error = null;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     }
   }
 
@@ -67,7 +68,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       }
       await _load();
     } catch (e) {
-      _hint('关注操作失败：$e');
+      _hint('关注操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -96,7 +97,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       setState(() => _ignored = !_ignored);
       _hint(_ignored ? '已忽略用户' : '已取消忽略');
     } catch (e) {
-      _hint('操作失败：$e');
+      _hint('操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

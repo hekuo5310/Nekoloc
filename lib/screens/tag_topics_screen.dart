@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 站点标签页，与分类页共用话题列表卡片。
 class TagTopicsScreen extends StatefulWidget {
@@ -53,7 +54,7 @@ class _TagTopicsScreenState extends State<TagTopicsScreen> {
         _hasMore = r.hasMore && r.topics.isNotEmpty;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -75,7 +76,7 @@ class _TagTopicsScreenState extends State<TagTopicsScreen> {
       });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('加载更多失败：$e')),
+        SnackBar(content: Text('加载更多失败：${friendlyError(e)}')),
       );
     } finally {
       if (mounted) setState(() => _loadingMore = false);

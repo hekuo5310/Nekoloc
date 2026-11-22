@@ -110,7 +110,7 @@ class DiscourseApi {
         throw _dioError(e);
       }
     }
-    throw ApiException('请求失败，请重试');
+    throw ApiException('请求失败，请稍后重试');
   }
 
   bool _isBadCsrf(Map<String, dynamic> map) =>
@@ -124,7 +124,16 @@ class DiscourseApi {
       return first.toString();
     }
     if (err is String && err.isNotEmpty) return err;
-    return '请求失败 (HTTP $code)';
+    return _fallbackMessage(code);
+  }
+
+  /// 站点没有给出可读文案时的兜底。只描述用户能做什么，不暴露状态码。
+  static String _fallbackMessage(int code) {
+    if (code == 401 || code == 403) return '没有权限或登录已失效，请重新登录后再试';
+    if (code == 404) return '内容不存在或已被删除';
+    if (code == 429) return '操作太频繁，请稍后再试';
+    if (code >= 500) return '服务器开小差了，请稍后再试';
+    return '请求失败，请稍后重试';
   }
 
   ApiException _dioError(DioException e) {
@@ -142,7 +151,8 @@ class DiscourseApi {
         e.type == DioExceptionType.connectionError) {
       return ApiException('网络连接失败，请检查网络或站点地址是否正确');
     }
-    return ApiException(e.message ?? '网络错误');
+    // e.message 是 Dio 的英文原文，不能展示；交给 friendlyError 归类。
+    return ApiException('网络异常，请稍后重试');
   }
 
   Future<void> ensureCsrf() async {

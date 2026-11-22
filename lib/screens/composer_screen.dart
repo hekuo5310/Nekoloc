@@ -11,6 +11,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../composer_tools.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 发帖 / 回复 / 私信编辑器
 class ComposerScreen extends StatefulWidget {
@@ -198,7 +199,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('图片上传失败：$e')));
+            SnackBar(content: Text('图片上传失败：${friendlyError(e)}')));
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -331,7 +332,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     }
   }

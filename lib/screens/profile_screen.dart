@@ -12,6 +12,7 @@ import 'bookmarks_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'user_topics_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 我的（个人中心）
 class ProfileScreen extends StatefulWidget {
@@ -53,7 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyError(e));
     }
   }
 

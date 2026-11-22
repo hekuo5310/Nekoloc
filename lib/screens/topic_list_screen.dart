@@ -8,6 +8,7 @@ import 'composer_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 首页：话题流（最新 / 热门 / 新帖 / 未读）
 class TopicListScreen extends StatefulWidget {
@@ -83,7 +84,7 @@ class _TopicListScreenState extends State<TopicListScreen>
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     } finally {
       if (mounted) setState(() => _refreshing = false);

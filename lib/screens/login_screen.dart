@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../api/discourse_api.dart';
 import '../app_state.dart';
 import '../theme.dart';
+import '../api/friendly_error.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -57,7 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     }
   }
@@ -77,9 +78,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      final msg = e.toString();
-      if (msg != '已取消授权' && mounted) {
-        setState(() => _error = '浏览器登录失败：$msg');
+      final cancelled = e.toString() == '已取消授权';
+      if (!cancelled && mounted) {
+        setState(() => _error = '浏览器登录失败：${friendlyError(e, fallback: '请稍后重试')}');
       }
     } finally {
       if (mounted) setState(() => _busy = false);

@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import 'category_topics_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 分类浏览
 class CategoriesScreen extends StatefulWidget {
@@ -45,7 +46,7 @@ class CategoriesScreenState extends State<CategoriesScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyError(e);
         _loading = false;
       });
     }

@@ -17,6 +17,7 @@ import '../widgets/poll_card.dart';
 import 'composer_screen.dart';
 import 'tag_topics_screen.dart';
 import 'public_profile_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 提取 HTML 中所有 http(s) 图片地址（供全屏查看器翻页）
 List<String> _extractImages(String cookedHtml) {
@@ -132,7 +133,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
           if (matches.isEmpty) throw ApiException('目标楼层不存在或无权访问');
           final posts = [...d.posts, ...matches]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
           d = _copyWithPosts(d, posts);
-        } catch (e) { focusError = '无法定位目标楼层：$e'; }
+        } catch (e) { focusError = '无法定位目标楼层：${friendlyError(e)}'; }
       }
       if (!mounted) return;
       setState(() {
@@ -143,7 +144,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyError(e);
         _loading = false;
       });
     }
@@ -170,7 +171,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
       setState(() => _detail = _copyWithPosts(latest, merged));
     } catch (e) {
-      _hint('加载楼层失败：$e');
+      _hint('加载楼层失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -224,7 +225,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         setState(() => _detail = _copyWithPosts(d, posts));
       }
     } catch (e) {
-      _hint('投票失败：$e');
+      _hint('投票失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _votingPostId = null);
     }
@@ -250,7 +251,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         setState(() => _detail = _copyWithPosts(d, posts));
       }
     } catch (e) {
-      _hint(e.toString());
+      _hint(friendlyError(e));
     } finally {
       if (mounted) setState(() => _likingBusy = false);
     }
@@ -284,7 +285,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       )).toList();
       setState(() => _detail = _copyWithPosts(d, posts));
     } catch (e) {
-      _hint('投票操作失败：$e');
+      _hint('投票操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _pollBusy.remove(key));
     }
@@ -334,7 +335,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       setState(() => _detail = _copyWithPosts(latest, posts));
       _hint(post.bookmarked ? '已取消收藏' : '已收藏楼层');
     } catch (e) {
-      _hint('收藏操作失败：$e');
+      _hint('收藏操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _bookmarkBusy = false);
     }
@@ -460,7 +461,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       );
       if (changed == true && mounted) _load();
     } catch (e) {
-      _hint('无法编辑：$e');
+      _hint('无法编辑：${friendlyError(e)}');
     }
   }
 
@@ -474,7 +475,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       await _load();
       _hint('通知设置已更新');
     } catch (e) {
-      _hint('通知设置失败：$e');
+      _hint('通知设置失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _notificationBusy = false);
     }
@@ -499,7 +500,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       );
       if (sent == true) _hint('举报已提交');
     } catch (e) {
-      _hint('获取举报理由失败：$e');
+      _hint('获取举报理由失败：${friendlyError(e)}');
     }
   }
 
@@ -770,7 +771,7 @@ class _ReportPostDialogState extends State<_ReportPostDialog> {
       await context.read<AppState>().api.flagPost(widget.postId, reason, _note.text);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }

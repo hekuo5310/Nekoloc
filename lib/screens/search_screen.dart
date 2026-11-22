@@ -6,6 +6,7 @@ import '../search_query.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -50,7 +51,7 @@ class _SearchScreenState extends State<SearchScreen> {
       if (!mounted || requestId != _requestId) return;
       setState(() => _result = r);
     } catch (e) {
-      if (mounted && requestId == _requestId) setState(() => _error = e.toString());
+      if (mounted && requestId == _requestId) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted && requestId == _requestId) setState(() => _loading = false);
     }
@@ -73,7 +74,7 @@ class _SearchScreenState extends State<SearchScreen> {
           hasMore: r.hasMore && added.isNotEmpty);
       });
     } catch (e) {
-      if (mounted && requestId == _requestId) setState(() => _pageError = e.toString());
+      if (mounted && requestId == _requestId) setState(() => _pageError = friendlyError(e));
     } finally {
       if (mounted && requestId == _requestId) setState(() => _loadingMore = false);
     }

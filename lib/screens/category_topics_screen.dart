@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 某分类下的话题列表（无限滚动）
 class CategoryTopicsScreen extends StatefulWidget {
@@ -75,7 +76,7 @@ class _CategoryTopicsScreenState extends State<CategoryTopicsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     } finally {
       if (mounted) setState(() => _refreshing = false);

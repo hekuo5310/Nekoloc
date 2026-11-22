@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 用户发布的话题
 class UserTopicsScreen extends StatefulWidget {
@@ -66,7 +67,7 @@ class _UserTopicsScreenState extends State<UserTopicsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     }
   }

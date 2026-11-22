@@ -6,6 +6,7 @@ import '../models.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 通知中心
 class NotificationsScreen extends StatefulWidget {
@@ -47,7 +48,7 @@ class NotificationsScreenState extends State<NotificationsScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyError(e);
         _loading = false;
       });
     }
@@ -63,7 +64,7 @@ class NotificationsScreenState extends State<NotificationsScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+            .showSnackBar(SnackBar(content: Text(friendlyError(e))));
       }
     }
   }
