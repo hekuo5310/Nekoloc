@@ -3,6 +3,7 @@ import 'package:nodeloc_app/models.dart';
 import 'package:nodeloc_app/plugins.dart';
 
 void main() {
+  topicEnvelopeTests();
   test('打赏总额不计系统扣减', () {
     final rewards = [
       const PostReward(amount: 10),
@@ -67,5 +68,17 @@ void main() {
     });
     expect(plain.rewards, isEmpty);
     expect(plain.redEnvelopeClaim, isNull);
+  });
+}
+
+void topicEnvelopeTests() {
+  test('话题红包：已领完与剩余数量', () {
+    final e = TopicRedEnvelope.fromJson({
+      'total_points': 100, 'total_count': 10, 'available_count': 3, 'exhausted': false,
+    });
+    expect(e.totalPoints, 100);
+    expect(e.availableCount, 3);
+    expect(e.exhausted, isFalse);
+    expect(TopicRedEnvelope.fromJson({'exhausted': true}).exhausted, isTrue);
   });
 }

@@ -198,6 +198,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         posts: posts,
         stream: d.stream,
         tags: d.tags,
+        redEnvelope: d.redEnvelope,
       );
 
   Future<void> _toggleLike(Post post) async {
@@ -684,6 +685,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             children: [
                               _TopicHeader(detail: d),
                               const SizedBox(height: 8),
+                              if (d.redEnvelope != null) ...[
+                                TopicRedEnvelopeBanner(envelope: d.redEnvelope!),
+                                const SizedBox(height: 8),
+                              ],
                               if (_focusError != null)
                                 Padding(padding: const EdgeInsets.all(8), child: Text(_focusError!,
                                   style: TextStyle(color: scheme.error))),

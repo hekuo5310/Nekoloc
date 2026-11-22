@@ -430,6 +430,7 @@ class TopicDetail {
   final List<Post> posts;
   final List<int> stream;
   final List<String> tags;
+  final TopicRedEnvelope? redEnvelope;
 
   TopicDetail({
     required this.id,
@@ -446,6 +447,7 @@ class TopicDetail {
     required this.posts,
     required this.stream,
     this.tags = const [],
+    this.redEnvelope,
   });
 
   factory TopicDetail.fromJson(dynamic json) {
@@ -465,6 +467,9 @@ class TopicDetail {
       posts: ((ps['posts'] as List?) ?? []).map((e) => Post.fromJson(e)).toList(),
       stream: ((ps['stream'] as List?) ?? []).map((e) => toInt(e) ?? 0).toList(),
       tags: ((json['tags'] as List?) ?? []).whereType<String>().toList(),
+      redEnvelope: json['red_envelope'] is Map
+          ? TopicRedEnvelope.fromJson(json['red_envelope'])
+          : null,
     );
   }
 }

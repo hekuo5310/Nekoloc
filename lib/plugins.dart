@@ -165,3 +165,25 @@ class CheckinResult {
     );
   }
 }
+
+/// 话题级红包的概况（发包人在话题上设置的红包）。
+class TopicRedEnvelope {
+  final int totalPoints;
+  final int totalCount;
+  final int availableCount;
+  final bool exhausted;
+
+  const TopicRedEnvelope({
+    required this.totalPoints,
+    required this.totalCount,
+    required this.availableCount,
+    required this.exhausted,
+  });
+
+  factory TopicRedEnvelope.fromJson(Map json) => TopicRedEnvelope(
+        totalPoints: _int(json['total_points']),
+        totalCount: _int(json['total_count']),
+        availableCount: _int(json['available_count']),
+        exhausted: json['exhausted'] == true,
+      );
+}

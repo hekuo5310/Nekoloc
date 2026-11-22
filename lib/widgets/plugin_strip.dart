@@ -75,3 +75,43 @@ class PostPluginStrip extends StatelessWidget {
         onPressed: onTap,
       );
 }
+
+/// 话题顶部的红包横幅：总积分、个数，以及剩余可领数量或“已领完”。
+class TopicRedEnvelopeBanner extends StatelessWidget {
+  final TopicRedEnvelope envelope;
+
+  const TopicRedEnvelopeBanner({super.key, required this.envelope});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.redeem, color: scheme.onTertiaryContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '红包 ${envelope.totalPoints} 积分 · ${envelope.totalCount} 个',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  envelope.exhausted ? '已领完' : '剩余 ${envelope.availableCount} 个可领',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
