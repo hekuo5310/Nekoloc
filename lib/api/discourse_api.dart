@@ -7,6 +7,7 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import '../models.dart';
 import '../plugins.dart';
 import '../account_models.dart';
+import '../chat_models.dart';
 
 /// 业务异常（展示给用户的错误信息）
 class ApiException implements Exception {
@@ -746,6 +747,37 @@ class DiscourseApi {
       if (colorHex != null && colorHex.isNotEmpty)
         'color': colorHex.replaceAll('#', '').toUpperCase(),
     });
+  }
+
+  // ---------------------------------------------------------------- 聊天（轮询实现，未接入 MessageBus）
+
+  static int _cint(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+
+  Future<List<ChatChannel>> chatChannels() async {
+    final d = await _getJson('/chat/api/me/channels.json');
+    final structured = [
+      ...((d['direct_message_channels'] as List?) ?? const []),
+      ...((d['public_channels'] as List?) ?? const []),
+    ];
+    final source = structured.isNotEmpty ? structured : ((d['channels'] as List?) ?? const []);
+    return source.whereType<Map>().map(ChatChannel.fromJson).toList();
+  }
+
+  Future<List<ChatMessage>> chatMessages(int channelId, {int pageSize = 50}) async {
+    final d = await _getJson(
+      '/chat/api/channels/$channelId/messages.json',
+      query: {'page_size': pageSize},
+    );
+    return ((d['messages'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(ChatMessage.fromJson)
+        .toList();
+  }
+
+  /// 发送聊天消息，返回新消息的 id（站点只返回 id，内容由下一次拉取补齐）。
+  Future<int?> sendChatMessage(int channelId, String message) async {
+    final d = await _mutate('POST', '/chat/$channelId.json', data: {'message': message});
+    return _cint(d['message_id']) == 0 ? null : _cint(d['message_id']);
   }
 
   Future<List<dynamic>> _getList(String path) async {

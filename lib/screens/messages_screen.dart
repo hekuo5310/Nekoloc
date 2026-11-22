@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
+import 'chat_screen.dart';
 import 'composer_screen.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
@@ -119,6 +120,14 @@ class MessagesScreenState extends State<MessagesScreen>
       appBar: AppBar(
         title: const Text('私信'),
         actions: [
+          IconButton(
+            tooltip: '聊天',
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ChatChannelsScreen()),
+            ),
+          ),
           IconButton(
             tooltip: '新私信',
             icon: const Icon(Icons.add_comment_outlined),
