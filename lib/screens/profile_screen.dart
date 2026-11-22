@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
+import '../widgets/checkin_card.dart';
 import '../models.dart';
 import '../update_checker.dart';
 import '../util.dart';
@@ -198,6 +199,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
               ),
             const SizedBox(height: 6),
+            const CheckinCard(),
             Card(
               margin: const EdgeInsets.symmetric(vertical: 5),
               child: Column(

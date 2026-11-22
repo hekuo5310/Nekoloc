@@ -1,8 +1,11 @@
+import 'dart:math';
+
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 
 import '../models.dart';
+import '../plugins.dart';
 
 /// 业务异常（展示给用户的错误信息）
 class ApiException implements Exception {
@@ -566,6 +569,77 @@ class DiscourseApi {
       if (e.type == DioExceptionType.cancel) rethrow;
       throw _dioError(e);
     }
+  }
+
+  // ---------------------------------------------------------------- 插件：打赏 / 抽奖 / 签到 / 积分 / 节点
+
+  /// 打赏 — discourse-reward。服务端按金额扣减打赏者积分。
+  Future<void> giveReward(int postId, int amount, {String? note}) async {
+    await _mutate('POST', '/reward/give', data: {
+      'post_id': postId,
+      'amount': amount,
+      if (note != null && note.isNotEmpty) 'note': note,
+    });
+  }
+
+  /// 参与抽奖。返回服务端最新的抽奖状态（人数、我的票数）。
+  Future<PostLottery?> participateInLottery(int lotteryId, int quantity, {bool random = false}) async {
+    final d = await _mutate('POST', '/lottery/$lotteryId/participate',
+        data: {'quantity': quantity, 'random': random});
+    final lottery = d['lottery'];
+    return lottery is Map ? PostLottery.fromJson(lottery) : null;
+  }
+
+  /// 今日签到状态（服务端的日期口径为准，不用本机时钟判断）。
+  Future<CheckinStatus> checkinStatus() async {
+    final d = await _getJson('/mobile/checkin.json');
+    return CheckinStatus.fromJson(d);
+  }
+
+  /// 每日签到。同一天重复签到服务端会返回说明文字，原样交给界面展示。
+  Future<CheckinResult> checkin() async {
+    await ensureCsrf();
+    final nonce = _randomNonce();
+    try {
+      final resp = await _dio.post(
+        '/checkin',
+        data: {
+          'nonce': nonce,
+          'timestamp': DateTime.now().millisecondsSinceEpoch.toString(),
+        },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          headers: {
+            'X-Discourse-Checkin': 'true',
+            'X-Checkin-Nonce': nonce,
+            if (_csrf != null && userApiKey == null) 'X-CSRF-Token': _csrf,
+          },
+        ),
+      );
+      return CheckinResult.fromJson(_handle(resp));
+    } on DioException catch (e) {
+      throw _dioError(e);
+    }
+  }
+
+  /// 账号累计积分。
+  Future<int> pointsTotal(String username) async {
+    final d = await _getJson('/u/${Uri.encodeComponent(username)}/points-scores.json');
+    return toInt(d['total_scores']) ?? 0;
+  }
+
+  /// 节点（分类）目录，用于节点页。
+  Future<List<Category>> nodes() async {
+    final d = await _getJson('/nodes.json');
+    return ((d['communities'] as List?) ?? const [])
+        .whereType<Map>()
+        .map(Category.fromJson)
+        .toList();
+  }
+
+  static String _randomNonce() {
+    final rng = Random.secure();
+    return List.generate(16, (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
   }
 
   // ---------------------------------------------------------------- 工具

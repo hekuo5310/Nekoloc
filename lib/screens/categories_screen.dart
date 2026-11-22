@@ -5,6 +5,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import 'category_topics_screen.dart';
+import 'nodes_screen.dart';
 import '../api/friendly_error.dart';
 
 /// 分类浏览
@@ -58,7 +59,16 @@ class CategoriesScreenState extends State<CategoriesScreen>
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('分类')),
+      appBar: AppBar(title: const Text('分类'), actions: [
+        IconButton(
+          tooltip: '节点',
+          icon: const Icon(Icons.hub_outlined),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NodesScreen()),
+          ),
+        ),
+      ]),
       body: _loading
           ? const LoadingView()
           : _error != null

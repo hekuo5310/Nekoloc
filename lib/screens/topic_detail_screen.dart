@@ -10,6 +10,7 @@ import '../api/discourse_api.dart';
 import '../models.dart';
 import '../reactions.dart';
 import '../theme.dart';
+import '../plugin_actions.dart';
 import '../widgets/plugin_strip.dart';
 import '../util.dart';
 import '../widgets/common.dart';
@@ -297,6 +298,33 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   }
 
   /// 首帖工具栏和逐楼菜单共用同一收藏状态。
+  /// æèµæååéæ°å è½½è¯é¢ï¼è®©æèµæ»é¢ä»æå¡ç«¯å·æ°ã
+  Future<void> _rewardPost(Post post) async {
+    final api = context.read<AppState>().api;
+    final sent = await showRewardDialog(context, api, post);
+    if (sent && mounted) {
+      _hint('å·²æèµ @${post.username}');
+      _load();
+    }
+  }
+
+  /// åä¸æ½å¥ï¼æå¡ç«¯è¿åææ°çæ½å¥ç¶æï¼åªæ¿æ¢è¿ä¸æ¥¼ã
+  Future<void> _joinLottery(Post post) async {
+    final lottery = post.lottery;
+    if (lottery == null) return;
+    final api = context.read<AppState>().api;
+    final next = await showLotteryDialog(context, api, lottery);
+    if (next == null || !mounted) return;
+    final d = _detail;
+    if (d == null) return;
+    final idx = d.posts.indexWhere((p) => p.id == post.id);
+    if (idx < 0) return;
+    final posts = [...d.posts];
+    posts[idx] = posts[idx].copyWith(lottery: next);
+    setState(() => _detail = _copyWithPosts(d, posts));
+    _hint('å·²åä¸æ½å¥');
+  }
+
   Future<void> _toggleBookmark([Post? target]) async {
     final app = context.read<AppState>();
     final d = _detail;
@@ -511,6 +539,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
 
   Widget _postCard(TopicDetail detail, Post post) => _PostCard(
     post: post, detail: detail,
+    onReward: context.read<AppState>().isLoggedIn &&
+        post.username != context.read<AppState>().user?.username
+        ? () => _rewardPost(post)
+        : null,
+    onLottery: context.read<AppState>().isLoggedIn ? () => _joinLottery(post) : null,
     onLike: () => _toggleLike(post),
     onShowReactions: () => _showReactionPicker(post),
     onReply: () => _reply(replyToPostNumber: post.postNumber,
@@ -848,9 +881,13 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onBookmark;
   final bool bookmarking;
   final void Function(PostPoll, List<String>?) onPollVote;
+  final VoidCallback? onReward;
+  final VoidCallback? onLottery;
   final Set<String> pollBusy;
 
   const _PostCard({
+    this.onReward,
+    this.onLottery,
     required this.post,
     required this.detail,
     required this.onLike,
@@ -1048,7 +1085,11 @@ class _PostCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             body,
-            PostPluginStrip(post: post),
+            PostPluginStrip(
+              post: post,
+              onReward: onReward,
+              onLottery: onLottery,
+            ),
             if (!post.hidden)
               for (final poll in post.polls)
                 PollCard(

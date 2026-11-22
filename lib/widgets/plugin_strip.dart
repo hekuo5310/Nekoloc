@@ -3,12 +3,23 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../plugins.dart';
 
-/// 楼层下方的插件徽章：打赏总额、本楼领取的红包、进行中的抽奖。
-/// 没有任何插件数据时不占位。
+/// 楼层下方的插件信息与操作：打赏总额、本楼领取的红包、抽奖状态，以及打赏 / 参与抽奖入口。
+/// 没有任何插件数据、也没有可用操作时不占位。
 class PostPluginStrip extends StatelessWidget {
   final Post post;
 
-  const PostPluginStrip({super.key, required this.post});
+  /// 非 null 时显示“打赏”入口（自己的帖子、未登录时传 null）。
+  final VoidCallback? onReward;
+
+  /// 非 null 时抽奖卡可点击参与（抽奖已结束或未登录时传 null）。
+  final VoidCallback? onLottery;
+
+  const PostPluginStrip({
+    super.key,
+    required this.post,
+    this.onReward,
+    this.onLottery,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +42,22 @@ class PostPluginStrip extends StatelessWidget {
       final people = cap == null
           ? '${lottery.participantsCount} 人参与'
           : '${lottery.participantsCount}/$cap 人参与';
-      chips.add(_chip(Icons.casino_outlined, '抽奖「${lottery.title}」· $state · $people'));
+      final mine = lottery.isParticipating ? ' · 我已参与' : '';
+      chips.add(_chip(
+        Icons.casino_outlined,
+        '抽奖「${lottery.title}」· $state · $people$mine',
+        onTap: lottery.isOpen ? onLottery : null,
+      ));
+    }
+
+    if (onReward != null) {
+      chips.add(ActionChip(
+        avatar: const Icon(Icons.card_giftcard_outlined, size: 16),
+        label: const Text('打赏', style: TextStyle(fontSize: 12)),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onPressed: onReward,
+      ));
     }
 
     if (chips.isEmpty) return const SizedBox.shrink();
@@ -41,10 +67,11 @@ class PostPluginStrip extends StatelessWidget {
     );
   }
 
-  Widget _chip(IconData icon, String text) => Chip(
+  Widget _chip(IconData icon, String text, {VoidCallback? onTap}) => ActionChip(
         avatar: Icon(icon, size: 16),
         label: Text(text, style: const TextStyle(fontSize: 12)),
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onPressed: onTap,
       );
 }

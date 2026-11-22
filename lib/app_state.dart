@@ -2,6 +2,7 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'dart:io';
 
 import 'api/discourse_api.dart';
@@ -9,7 +10,11 @@ import 'mobile_source.dart';
 import 'models.dart';
 import 'oauth/rsa.dart';
 import 'oauth/webview_login.dart';
+import 'push_watch.dart';
 import 'update_checker.dart';
+
+/// åºç¨åæéçæ¿è½½èï¼åå°è½®è¯¢å°çæ°éç¥ä»¥æ¨ªå¹å±ç¤ºï¼ã
+final GlobalKey<ScaffoldMessengerState> appMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 /// 全局应用状态：会话 + 外观
 class AppState extends ChangeNotifier {
@@ -41,6 +46,13 @@ class AppState extends ChangeNotifier {
   Set<String> get blockedUsernames => Set.unmodifiable(_blocked);
   bool isBlocked(String? username) => username != null && _blocked.contains(username);
 
+  /// æ¶æ¯æéè®¾ç½®ä¸æ°´ä½çº¿ï¼åªå¨æ¬æºä¿å­ï¼æ°´ä½çº¿éè´¦å·åæ¢æ¸ç©ºï¼ã
+  PushSettings pushSettings = const PushSettings();
+  PushWatchState _pushState = const PushWatchState();
+  Timer? _pushTimer;
+
+  static const Duration _pushInterval = Duration(minutes: 15);
+
   UpdateInfo? updateInfo;
   bool _updateChecked = false;
 
@@ -53,6 +65,16 @@ class AppState extends ChangeNotifier {
     };
     _userApiKey = prefs.getString('user_api_key');
     postSourceLevel = prefs.getInt('post_source_level') ?? 4;
+    pushSettings = PushSettings(
+      replies: prefs.getBool('push_replies') ?? true,
+      likes: prefs.getBool('push_likes') ?? true,
+      messages: prefs.getBool('push_messages') ?? true,
+      system: prefs.getBool('push_system') ?? true,
+    );
+    _pushState = PushWatchState(
+      watermark: prefs.getInt('push_watermark') ?? 0,
+      baselineDone: prefs.getBool('push_baseline') ?? false,
+    );
     await _createApi();
     try {
       siteInfo = await api.siteBasicInfo();
@@ -89,6 +111,44 @@ class AppState extends ChangeNotifier {
       user = null;
     }
     await reloadBlocked();
+    _restartPushPolling();
+    notifyListeners();
+  }
+
+  /// åå°æ¶æ¯æéï¼ç»å½åæ¯ 15 åéæåä¸æ¬¡æªè¯»éç¥ã
+  /// ç¬¬ä¸æ¬¡æåæååªè®¾åºçº¿ï¼è§ push_watch.dartï¼ï¼ä¸ä¼æç§¯åçæªè¯»å¨é¨å¼¹åºã
+  void _restartPushPolling() {
+    _pushTimer?.cancel();
+    _pushTimer = null;
+    if (!isLoggedIn) return;
+    _pushTimer = Timer.periodic(_pushInterval, (_) => pollPush());
+    unawaited(pollPush());
+  }
+
+  Future<void> pollPush() async {
+    if (!isLoggedIn) return;
+    try {
+      final items = await api.notifications();
+      final plan = planPushAlerts(items, _pushState, pushSettings);
+      _pushState = plan.next;
+      await prefs.setInt('push_watermark', plan.next.watermark);
+      await prefs.setBool('push_baseline', plan.next.baselineDone);
+      for (final n in plan.toAlert) {
+        appMessengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text(pushAlertText(n))),
+        );
+      }
+    } catch (_) {
+      // å¤±è´¥å°±ç­ä¸ä¸æ¬¡è½®è¯¢ï¼ä¸ææ°ç¨æ·ã
+    }
+  }
+
+  void setPushSettings(PushSettings s) {
+    pushSettings = s;
+    prefs.setBool('push_replies', s.replies);
+    prefs.setBool('push_likes', s.likes);
+    prefs.setBool('push_messages', s.messages);
+    prefs.setBool('push_system', s.system);
     notifyListeners();
   }
 
@@ -188,6 +248,11 @@ class AppState extends ChangeNotifier {
     await _jar?.deleteAll();
     user = null;
     _blocked.clear();
+    _pushTimer?.cancel();
+    _pushTimer = null;
+    _pushState = const PushWatchState();
+    await prefs.remove('push_watermark');
+    await prefs.remove('push_baseline');
     notifyListeners();
   }
 

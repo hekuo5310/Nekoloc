@@ -362,6 +362,7 @@ class Post {
     bool? canVoteDown,
     List<PostPoll>? polls,
     Map<String, List<String>>? pollsVotes,
+    PostLottery? lottery,
     bool clearBookmarkId = false,
     bool clearCurrentUserReaction = false,
   }) => Post(
@@ -390,7 +391,7 @@ class Post {
         polls: polls ?? this.polls,
         pollsVotes: pollsVotes ?? this.pollsVotes,
         rewards: rewards,
-        lottery: lottery,
+        lottery: lottery ?? this.lottery,
         redEnvelopeClaim: redEnvelopeClaim,
       );
 

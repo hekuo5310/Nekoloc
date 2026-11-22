@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
+import '../push_watch.dart';
 import 'blocked_users_screen.dart';
 import '../mobile_source.dart';
 import '../theme.dart';
@@ -205,6 +206,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   MaterialPageRoute(builder: (_) => const BlockedUsersScreen()),
                 ),
+              ),
+            ),
+          if (app.isLoggedIn)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: Column(
+                children: [
+                  const ListTile(
+                    leading: Icon(Icons.notifications_outlined),
+                    title: Text('æ¶æ¯æé'),
+                    subtitle: Text('åºç¨è¿è¡æé´æ¯ 15 åéæ£æ¥ä¸æ¬¡æ°éç¥',
+                        style: TextStyle(fontSize: 12)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('åå¤ä¸æå'),
+                    value: app.pushSettings.replies,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(replies: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ç¹èµä¸è¡¨æ'),
+                    value: app.pushSettings.likes,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(likes: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('ç§ä¿¡ä¸èå¤©'),
+                    value: app.pushSettings.messages,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(messages: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('å¶ä»éç¥'),
+                    value: app.pushSettings.system,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(system: v)),
+                  ),
+                ],
               ),
             ),
           Card(

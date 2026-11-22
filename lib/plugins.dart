@@ -45,6 +45,10 @@ class PostLottery {
   final int? maxParticipants;
   final DateTime? drawAt;
   final List<String> prizes;
+  final int minTicketsPerUser;
+  final int maxTicketsPerUser;
+  final int userTickets;
+  final bool isParticipating;
 
   const PostLottery({
     required this.id,
@@ -54,6 +58,10 @@ class PostLottery {
     this.maxParticipants,
     this.drawAt,
     this.prizes = const [],
+    this.minTicketsPerUser = 1,
+    this.maxTicketsPerUser = 1,
+    this.userTickets = 0,
+    this.isParticipating = false,
   });
 
   bool get isOpen => status == 'open';
@@ -80,6 +88,10 @@ class PostLottery {
         for (final level in levels.whereType<Map>())
           if (level['prize'] != null) level['prize'].toString(),
       ],
+      minTicketsPerUser: _int(json['min_tickets_per_user'] ?? 1),
+      maxTicketsPerUser: _int(json['max_tickets_per_user'] ?? 1),
+      userTickets: _int(json['user_tickets']),
+      isParticipating: json['is_participating'] == true,
     );
   }
 }
@@ -103,4 +115,53 @@ int? claimedPointsForPost(RedEnvelopeClaim? claim, int postId) {
     return null;
   }
   return claim.pointsReceived;
+}
+
+/// 每日签到状态。日期与“是否已签”都以服务端口径为准。
+class CheckinStatus {
+  final bool checkedInToday;
+  final String? today;
+  final int? pointsToday;
+  final int? nextPoints;
+  final int streak;
+  final int totalDays;
+
+  const CheckinStatus({
+    this.checkedInToday = false,
+    this.today,
+    this.pointsToday,
+    this.nextPoints,
+    this.streak = 0,
+    this.totalDays = 0,
+  });
+
+  /// 今天还能签到（尚未签到，且服务端给出了可领取的积分）。
+  bool get canCheckIn => !checkedInToday && nextPoints != null;
+
+  factory CheckinStatus.fromJson(Map json) => CheckinStatus(
+        checkedInToday: json['checked_in_today'] == true,
+        today: json['today']?.toString(),
+        pointsToday: json['points_today'] == null ? null : _int(json['points_today']),
+        nextPoints: json['next_points'] == null ? null : _int(json['next_points']),
+        streak: _int(json['streak']),
+        totalDays: _int(json['total_days']),
+      );
+}
+
+/// 签到结果。`success` 在站点上可能是 true、也可能是字符串 "OK"，两种都要认。
+class CheckinResult {
+  final bool success;
+  final int? points;
+  final String? message;
+
+  const CheckinResult({required this.success, this.points, this.message});
+
+  factory CheckinResult.fromJson(Map json) {
+    final s = json['success'];
+    return CheckinResult(
+      success: s == true || s == 'OK' || s == 'ok',
+      points: json['points'] == null ? null : _int(json['points']),
+      message: json['message']?.toString(),
+    );
+  }
 }
