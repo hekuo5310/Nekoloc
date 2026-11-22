@@ -5,7 +5,7 @@
 | 参考页面 | 状态 | 备注 |
 | --- | --- | --- |
 | FeedScreen / TopicList | 已有 | |
-| ReaderScreen（嵌套回复树） | 部分 | 平铺阅读器为主；嵌套视图页面可按热门、最新、最早排序并逐楼展开。阅读器内无嵌套切换 |
+| ReaderScreen（嵌套回复树） | 已有 | 阅读器顶部开关切换嵌套视图，可按热门、最新、最早排序并逐楼展开 |
 | ComposeScreen | 已有 | 含红包、抽奖、GIF、图片编辑 |
 | ImageEditorScreen | 已有 | 旋转、翻转、裁剪、缩放 |
 | VideoEditorScreen / VideoFeed | 待做 | 需要平台媒体管线 |
@@ -34,8 +34,8 @@
 | 会话与登录令牌撤销 | 已有 | 安全页中查看设备、退出单个或其他设备 |
 | LoginScreen | 已有 | 账号密码与浏览器授权 |
 | WelcomeScreen | 部分 | 登录页承担欢迎页的作用，入口为注册与找回密码 |
-| SignupUsername / Email / Password / Gender / Interests | 部分 | 单页注册表单（用户名、昵称、邮箱、密码）；参考项目的分步流程、性别与兴趣选项未做 |
-| ActivationScreen（账号激活） | 部分 | 激活链接由站点邮件发送；应用内只展示站点说明，不提供重发 |
+| SignupUsername / Email / Password / Gender / Interests | 部分 | 合并为一页：账号信息、站点要求的字段（如性别，从站点设置读取）、兴趣节点（随机 8 个，激活后可加入）。仍是单页，不是分步 |
+| ActivationScreen（账号激活） | 已有 | 激活页提示查收邮件并返回登录；激活链接由站点邮件发送，应用内不提供重发 |
 | 找回密码 | 已有 | |
 | AppsScreen / AppDetailScreen | 已有 | 站点小程序在应用内运行（Android、iOS） |
 | WebPageScreen | 已有 | 通过 WebView 打开外部页面 |

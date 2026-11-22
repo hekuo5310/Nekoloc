@@ -906,6 +906,7 @@ class DiscourseApi {
     required String name,
     required String email,
     required String password,
+    Map<int, String> userFields = const {},
   }) async {
     await ensureCsrf();
     final honeypot = await _honeypot();
@@ -918,6 +919,12 @@ class DiscourseApi {
       'email': email.trim(),
       'password': password,
       ...honeypot,
+      // JSON 体中以嵌套对象发送，Rails 才能还原为 user_fields[id] 参数。
+      if (userFields.values.any((v) => v.isNotEmpty))
+        'user_fields': {
+          for (final e in userFields.entries)
+            if (e.value.isNotEmpty) '${e.key}': e.value,
+        },
     });
     final success = d['success'];
     if (success == false) {
@@ -972,6 +979,16 @@ class DiscourseApi {
         query: {'sort': sort, 'page': page});
     final children = ((d['children'] as List?) ?? const []).whereType<Map>().toList();
     return (children: children, hasMore: flexBool(d['has_more']));
+  }
+
+  /// 注册时需要填写的用户字段（性别等由站点决定，这里不写死）。
+  Future<List<SignupField>> signupUserFields() async {
+    final d = await _getJson('/site.json');
+    return ((d['user_fields'] as List?) ?? const [])
+        .whereType<Map>()
+        .where((f) => flexBool(f['show_on_signup']))
+        .map(SignupField.fromJson)
+        .toList();
   }
 
   Future<List<dynamic>> _getList(String path) async {

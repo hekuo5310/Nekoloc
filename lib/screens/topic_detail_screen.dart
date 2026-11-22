@@ -53,6 +53,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   bool _loading = true;
   bool _loadingMore = false;
   bool _likingBusy = false;
+  /// 阅读器内的嵌套视图开关：打开后主体换成嵌套回复树。
+  bool _nestedMode = false;
   int? _votingPostId;
   bool _bookmarkBusy = false;
   bool _notificationBusy = false;
@@ -621,20 +623,9 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                     ),
             ),
           IconButton(
-            tooltip: '嵌套视图',
-            icon: const Icon(Icons.account_tree_outlined),
-            onPressed: d == null
-                ? null
-                : () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => NestedTopicScreen(
-                          topicId: d.id,
-                          title: d.title,
-                          slug: d.slug,
-                        ),
-                      ),
-                    ),
+            tooltip: _nestedMode ? '切回普通视图' : '嵌套视图',
+            icon: Icon(_nestedMode ? Icons.view_agenda_outlined : Icons.account_tree_outlined),
+            onPressed: d == null ? null : () => setState(() => _nestedMode = !_nestedMode),
           ),
           IconButton(
             tooltip: '在浏览器中打开',
@@ -682,7 +673,9 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
               icon: const Icon(Icons.reply),
               label: const Text('回复'),
             ),
-      body: _loading
+      body: (_nestedMode && d != null)
+          ? NestedTopicView(topicId: d.id, slug: d.slug)
+          : _loading
           ? const LoadingView()
           : _error != null
               ? ErrorView(message: _error!, onRetry: _load)

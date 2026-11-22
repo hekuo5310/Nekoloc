@@ -238,3 +238,28 @@ class AuthSession {
         isActive: flexBool(json['is_active']),
       );
 }
+
+/// 注册时站点要求填写的用户字段（来自 site.json 的 user_fields，且 show_on_signup 为真）。
+class SignupField {
+  final int id;
+  final String name;
+  final String fieldType;
+  final bool required;
+  final List<String> options;
+
+  const SignupField({
+    required this.id,
+    required this.name,
+    required this.fieldType,
+    required this.required,
+    this.options = const [],
+  });
+
+  factory SignupField.fromJson(Map json) => SignupField(
+        id: _int(json['id']),
+        name: json['name']?.toString() ?? '',
+        fieldType: json['field_type']?.toString() ?? '',
+        required: flexBool(json['required']),
+        options: ((json['options'] as List?) ?? const []).map((o) => o.toString()).toList(),
+      );
+}

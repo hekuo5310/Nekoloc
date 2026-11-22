@@ -8,7 +8,8 @@ import '../nested_replies.dart';
 
 /// 嵌套视图：回复按楼中楼的层级显示，可按热门、最新、最早排序。
 /// 子回复较多的楼层可以展开，展开时只加载该楼的直接回复。
-class NestedTopicScreen extends StatefulWidget {
+/// 独立的嵌套视图页面（带应用栏）。内容部分见 [NestedTopicView]，阅读器也会直接嵌入它。
+class NestedTopicScreen extends StatelessWidget {
   final int topicId;
   final String title;
   final String? slug;
@@ -16,10 +17,26 @@ class NestedTopicScreen extends StatefulWidget {
   const NestedTopicScreen({super.key, required this.topicId, required this.title, this.slug});
 
   @override
-  State<NestedTopicScreen> createState() => _NestedTopicScreenState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      body: NestedTopicView(topicId: topicId, slug: slug),
+    );
+  }
 }
 
-class _NestedTopicScreenState extends State<NestedTopicScreen> {
+/// 嵌套视图的内容（不含应用栏）：排序、分页、逐楼展开。可嵌入阅读器。
+class NestedTopicView extends StatefulWidget {
+  final int topicId;
+  final String? slug;
+
+  const NestedTopicView({super.key, required this.topicId, this.slug});
+
+  @override
+  State<NestedTopicView> createState() => _NestedTopicViewState();
+}
+
+class _NestedTopicViewState extends State<NestedTopicView> {
   static const _sorts = {'top': '热门', 'new': '最新', 'old': '最早'};
 
   final List<NestedNode> _roots = [];
@@ -179,13 +196,12 @@ class _NestedTopicScreenState extends State<NestedTopicScreen> {
         },
       );
     }
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        actions: [
-          PopupMenuButton<String>(
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: PopupMenuButton<String>(
             tooltip: '排序',
-            icon: const Icon(Icons.sort),
             onSelected: _changeSort,
             itemBuilder: (_) => [
               for (final e in _sorts.entries)
@@ -196,10 +212,18 @@ class _NestedTopicScreenState extends State<NestedTopicScreen> {
                   )),
                 ),
             ],
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 12, 0),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.sort, size: 18),
+                const SizedBox(width: 4),
+                Text(_sorts[_sort] ?? ''),
+              ]),
+            ),
           ),
-        ],
-      ),
-      body: body,
+        ),
+        Expanded(child: body),
+      ],
     );
   }
 }
