@@ -12,6 +12,7 @@ import '../models.dart';
 import '../composer_tools.dart';
 import '../plugin_drafts.dart';
 import '../widgets/gif_picker_sheet.dart';
+import 'image_editor_screen.dart';
 import '../widgets/plugin_composer_options.dart';
 import 'topic_detail_screen.dart';
 import '../api/friendly_error.dart';
@@ -169,13 +170,22 @@ class _ComposerScreenState extends State<ComposerScreen> {
         allowMultiple: false,
       );
       final file = files.isNotEmpty ? files.single : null;
-      final path = file?.path;
-      if (!mounted || file == null || path == null) return;
+      final picked = file?.path;
+      if (!mounted || file == null || picked == null) return;
+
+      // 上传前先编辑（旋转、裁剪）；返回键取消则不上传。
+      final path = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (_) => ImageEditorScreen(path: picked)),
+      );
+      if (!mounted || path == null) return;
+      final edited = path != picked;
+      final uploadName = edited ? '${file.name.split('.').first}.jpg' : file.name;
 
       setState(() => _uploading = true);
       final resp = await app.api.uploadImage(
         filePath: path,
-        filename: file.name,
+        filename: uploadName,
         onProgress: (sent, total) {
           // 进度由 _uploading 状态与 snackbar 提示
         },
@@ -187,7 +197,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
         throw '上传失败：响应缺少图片地址';
       }
       final markdown =
-          '![${file.name}](${shortUrl ?? url})';
+          '![$uploadName](${shortUrl ?? url})';
       final sel = _contentCtrl.selection;
       final text = _contentCtrl.text;
       final insertPos = sel.isValid ? sel.baseOffset : text.length;
