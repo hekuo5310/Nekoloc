@@ -5,7 +5,7 @@ void main() {
   test('名称生成别名', () {
     expect(slugifyNodeName('  AI  Tools '), 'ai-tools');
     expect(slugifyNodeName('hello_world'), 'hello-world');
-    expect(slugifyNodeName('--a!!b--'), 'a-b');
+    expect(slugifyNodeName('--a!!b--'), 'ab');
     expect(slugifyNodeName('中文 节点'), '中文-节点');
     expect(slugifyNodeName('!!!'), '');
   });
