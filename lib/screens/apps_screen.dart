@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../account_models.dart';
 import '../api/friendly_error.dart';
 import '../app_state.dart';
+import 'mini_app_screen.dart';
 
 /// 应用目录（站点的小应用列表）。
 class AppsScreen extends StatefulWidget {
@@ -132,10 +133,30 @@ class _AppDetailScreenState extends State<AppDetailScreen> {
                 const SizedBox(height: 12),
                 Text(
                   app.runsInApp
-                      ? '该应用支持在应用内运行（当前版本仍需在网页打开）'
+                      ? (MiniAppScreen.supported
+                          ? '该应用可以在应用内运行'
+                          : '该应用可以在应用内运行（当前平台请在网页打开）')
                       : '该应用需要在网页版中使用',
                   style: const TextStyle(fontSize: 12),
                 ),
+                if (app.runsInApp && MiniAppScreen.supported) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MiniAppScreen(
+                          name: app.name,
+                          url: app.homeUrl?.isNotEmpty == true
+                              ? app.homeUrl!
+                              : '${AppState.baseUrl}/apps/${app.slug}',
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('在应用内打开'),
+                  ),
+                ],
                 if (app.homeUrl != null && app.homeUrl!.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

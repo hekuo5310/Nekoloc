@@ -148,6 +148,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// 当前会话的站点 Cookie（用于把登录状态交给应用内的 WebView，例如小程序外壳）。
+  Future<List<Cookie>> sessionCookies() async {
+    final jar = _jar;
+    if (jar == null) return const [];
+    return jar.loadForRequest(Uri.parse(baseUrl));
+  }
+
   void setPushSettings(PushSettings s) {
     pushSettings = s;
     unawaited(savePushSettings(prefs, s));
