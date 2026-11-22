@@ -881,6 +881,53 @@ class DiscourseApi {
         .toList();
   }
 
+  // ---------------------------------------------------------------- 注册 / 找回密码
+
+  /// 注册用的蜜罐字段（站点的反机器人校验）。
+  Future<Map<String, String>?> _honeypot() async {
+    final d = await _getJson('/session/hp.json');
+    final value = d['value']?.toString() ?? '';
+    final challenge = d['challenge']?.toString() ?? '';
+    if (value.isEmpty || challenge.isEmpty) return null;
+    return {
+      'password_confirmation': value,
+      // 站点要求把挑战字符串反转后提交。
+      'challenge': String.fromCharCodes(challenge.codeUnits.reversed),
+    };
+  }
+
+  /// 注册。返回 (是否已直接登录, 站点给出的说明)。
+  Future<({bool active, String? message})> signup({
+    required String username,
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    await ensureCsrf();
+    final honeypot = await _honeypot();
+    if (honeypot == null) {
+      throw ApiException('无法开始注册，请稍后重试');
+    }
+    final d = await _mutate('POST', '/users.json', data: {
+      'username': username.trim(),
+      'name': name.trim().isEmpty ? username.trim() : name.trim(),
+      'email': email.trim(),
+      'password': password,
+      ...honeypot,
+    });
+    final success = d['success'];
+    if (success == false) {
+      throw ApiException(d['message']?.toString() ?? '注册失败，请检查填写的信息');
+    }
+    return (active: flexBool(d['active']), message: d['message']?.toString());
+  }
+
+  /// 发送找回密码邮件。站点无论账号是否存在都给出相同说明，以免泄露账号信息。
+  Future<String?> requestPasswordReset(String login) async {
+    final d = await _mutate('POST', '/session/forgot_password.json', data: {'login': login.trim()});
+    return d['message']?.toString();
+  }
+
   Future<List<dynamic>> _getList(String path) async {
     try {
       final resp = await _dio.get(path);

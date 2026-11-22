@@ -17,7 +17,7 @@
 | ProfileScreen / PublicProfileScreen | 已有 | |
 | ProfileEditScreen | 已有 | |
 | UpgradeProgressScreen | 已有 | |
-| BadgesScreen（徽章与头衔） | 部分 | 只列出徽章，未设置头衔 |
+| BadgesScreen（徽章与头衔） | 已有 | 徽章列表；头衔可在资料编辑中从可用徽章中选择 |
 | 关注者列表 | 不适用 | 参考项目只显示数量，没有列表页 |
 | BlockedUsersScreen | 已有 | |
 | PostSourceScreen（发帖设备信息） | 已有 | 设置中的档位 |
@@ -33,11 +33,11 @@
 | SecurityScreen（两步验证） | 已有 | 备用码、添加、关闭 |
 | 会话与登录令牌撤销 | 已有 | 安全页中查看设备、退出单个或其他设备 |
 | LoginScreen | 已有 | 账号密码与浏览器授权 |
-| WelcomeScreen | 部分 | |
-| SignupUsername / Email / Password / Gender / Interests | 待做 | |
-| ActivationScreen（账号激活） | 待做 | |
-| 找回密码 | 待做 | |
+| WelcomeScreen | 部分 | 登录页承担欢迎页的作用，入口为注册与找回密码 |
+| SignupUsername / Email / Password / Gender / Interests | 部分 | 单页注册表单（用户名、昵称、邮箱、密码）；参考项目的分步流程、性别与兴趣选项未做 |
+| ActivationScreen（账号激活） | 部分 | 激活链接由站点邮件发送；应用内只展示站点说明，不提供重发 |
+| 找回密码 | 已有 | |
 | AppsScreen / AppDetailScreen | 已有 | 站点小程序在应用内运行（Android、iOS） |
 | WebPageScreen | 已有 | 通过 WebView 打开外部页面 |
 | 后台推送 | 部分 | Android 后台定时拉取；iOS 与桌面仅运行时提醒 |
-| 自定义信息流（custom-feeds） | 待做 | |
+| 自定义信息流（custom-feeds） | 不适用 | 参考项目定义了接口但界面未使用 |

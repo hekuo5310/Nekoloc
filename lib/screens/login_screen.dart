@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../api/discourse_api.dart';
 import '../app_state.dart';
+import 'password_reset_screen.dart';
+import 'signup_screen.dart';
 import '../theme.dart';
 import '../api/friendly_error.dart';
 
@@ -220,6 +222,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2.2, color: Colors.white))
                         : const Text('登录'),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const SignupScreen())),
+                        child: const Text('注册新账号'),
+                      ),
+                      const Text('·'),
+                      TextButton(
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const PasswordResetScreen())),
+                        child: const Text('忘记密码'),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                   Row(
