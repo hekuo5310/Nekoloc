@@ -87,8 +87,16 @@ class _ChatChannelsScreenState extends State<ChatChannelsScreen> {
 /// 发送后也会立即刷新。自己的消息可长按编辑或删除；可以发送图片附件、查看成员、离开频道。
 class ChatConversationScreen extends StatefulWidget {
   final ChatChannel channel;
+  /// 非空时显示该线程的消息（线程内发送也带上线程 id）。
+  final int? threadId;
+  final String? threadTitle;
 
-  const ChatConversationScreen({super.key, required this.channel});
+  const ChatConversationScreen({
+    super.key,
+    required this.channel,
+    this.threadId,
+    this.threadTitle,
+  });
 
   @override
   State<ChatConversationScreen> createState() => _ChatConversationScreenState();
@@ -113,10 +121,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     super.initState();
     _fetch(initial: true);
     _timer = Timer.periodic(_pollInterval, (_) => _fetch());
-    _busCancel = context.read<AppState>().bus.subscribe(
-          '/chat/${widget.channel.id}',
-          () => _fetch(),
-        );
+    // 线程内暂未订阅推送，靠定时拉取更新。
+    if (widget.threadId == null) {
+      _busCancel = context.read<AppState>().bus.subscribe(
+            '/chat/${widget.channel.id}',
+            () => _fetch(),
+          );
+    }
   }
 
   @override
@@ -137,7 +148,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     if (_fetching) return;
     _fetching = true;
     try {
-      final list = await context.read<AppState>().api.chatMessages(widget.channel.id);
+      final api = context.read<AppState>().api;
+      final tid = widget.threadId;
+      final list = tid == null
+          ? await api.chatMessages(widget.channel.id)
+          : await api.chatThreadMessages(widget.channel.id, tid);
       if (!mounted) return;
       setState(() {
         _messages = mergeChatMessages(_messages, list);
@@ -162,6 +177,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             widget.channel.id,
             text,
             uploadIds: uploadIds,
+            threadId: widget.threadId,
           );
       _input.clear();
       await _fetch();
@@ -310,24 +326,69 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     }
   }
 
+  void _openThreads() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ChatThreadsScreen(channel: widget.channel)),
+    );
+  }
+
+  Future<void> _pickNotificationLevel() async {
+    const levels = {
+      'always': '所有消息',
+      'mention': '仅提及我',
+      'never': '不通知',
+    };
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final e in levels.entries)
+              ListTile(
+                title: Text(e.value),
+                onTap: () => Navigator.pop(ctx, e.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await context.read<AppState>().api.setChatNotificationLevel(widget.channel.id, picked);
+      _toast('已更新通知设置');
+    } catch (e) {
+      _toast('设置失败：${friendlyError(e)}');
+    }
+  }
+
   String _absolute(String raw) => Uri.parse(AppState.baseUrl).resolve(raw).toString();
 
   @override
   Widget build(BuildContext context) {
     final me = context.watch<AppState>().user?.username;
     final scheme = Theme.of(context).colorScheme;
-    final title = widget.channel.title.isEmpty ? '频道 ${widget.channel.id}' : widget.channel.title;
+    final inThread = widget.threadId != null;
+    final title = inThread
+        ? (widget.threadTitle?.isNotEmpty == true ? widget.threadTitle! : '线程')
+        : (widget.channel.title.isEmpty ? '频道 ${widget.channel.id}' : widget.channel.title);
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
         actions: [
-          IconButton(tooltip: '成员', icon: const Icon(Icons.group_outlined), onPressed: _showMembers),
+          if (!inThread)
+            IconButton(tooltip: '成员', icon: const Icon(Icons.group_outlined), onPressed: _showMembers),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'leave') _leave();
+              if (v == 'threads') _openThreads();
+              if (v == 'level') _pickNotificationLevel();
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'leave', child: Text('离开频道')),
+            itemBuilder: (_) => [
+              if (!inThread) const PopupMenuItem(value: 'threads', child: Text('线程')),
+              if (!inThread) const PopupMenuItem(value: 'level', child: Text('通知设置')),
+              if (!inThread) const PopupMenuItem(value: 'leave', child: Text('离开频道')),
             ],
           ),
         ],
@@ -428,6 +489,81 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 频道的线程列表。点开一个线程即进入它的会话。
+class ChatThreadsScreen extends StatefulWidget {
+  final ChatChannel channel;
+
+  const ChatThreadsScreen({super.key, required this.channel});
+
+  @override
+  State<ChatThreadsScreen> createState() => _ChatThreadsScreenState();
+}
+
+class _ChatThreadsScreenState extends State<ChatThreadsScreen> {
+  List<ChatThread>? _threads;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _error = null);
+    try {
+      final list = await context.read<AppState>().api.chatThreads(widget.channel.id);
+      if (mounted) setState(() => _threads = list);
+    } catch (e) {
+      if (mounted) setState(() => _error = friendlyError(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget body;
+    if (_error != null) {
+      body = Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(_error!),
+        const SizedBox(height: 12),
+        OutlinedButton(onPressed: _load, child: const Text('重试')),
+      ]));
+    } else if (_threads == null) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (_threads!.isEmpty) {
+      body = const Center(child: Text('这个频道还没有线程'));
+    } else {
+      final threads = _threads!;
+      body = ListView.separated(
+        itemCount: threads.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, i) {
+          final t = threads[i];
+          return ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.subdirectory_arrow_right)),
+            title: Text(t.title.isEmpty ? '线程 ${t.id}' : t.title),
+            subtitle: Text('${t.replyCount} 条回复', style: const TextStyle(fontSize: 12)),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatConversationScreen(
+                  channel: widget.channel,
+                  threadId: t.id,
+                  threadTitle: t.title,
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(title: const Text('线程')),
+      body: RefreshIndicator(onRefresh: _load, child: body),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:nodeloc_app/chat_models.dart';
 ChatMessage _m(int id, String text) => ChatMessage.fromJson({'id': id, 'message': text});
 
 void main() {
+  threadTests();
   test('私聊频道按参与者显示标题', () {
     final c = ChatChannel.fromJson({
       'id': 4,
@@ -39,5 +40,15 @@ void main() {
   test('已删除的消息带标记', () {
     final m = ChatMessage.fromJson({'id': 9, 'message': 'x', 'deleted_at': '2026-01-01'});
     expect(m.deleted, isTrue);
+  });
+}
+
+void threadTests() {
+  test('线程摘要解析标题与回复数，缺标题时为空串', () {
+    final t = ChatThread.fromJson({'id': 7, 'title': '讨论', 'reply_count': 3});
+    expect(t.id, 7);
+    expect(t.title, '讨论');
+    expect(t.replyCount, 3);
+    expect(ChatThread.fromJson({'id': 8}).title, '');
   });
 }

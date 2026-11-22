@@ -21,7 +21,7 @@
 | 关注者列表 | 不适用 | 参考项目只显示数量，没有列表页 |
 | BlockedUsersScreen | 已有 | |
 | PostSourceScreen（发帖设备信息） | 已有 | 设置中的档位 |
-| InboxScreen / ChatConversationScreen | 部分 | 频道、消息、实时推送、编辑删除、图片附件、成员、离开频道已有；线程与群管理（设置成员、角色）待做 |
+| InboxScreen / ChatConversationScreen | 已有 | 频道、消息、实时推送、编辑删除、图片附件、线程、成员、离开频道、通知级别已有。参考客户端没有添加或移除成员、设置角色的接口，因此不提供 |
 | MessagesScreen（私信） | 已有 | |
 | NotificationsScreen | 已有 | |
 | NotificationPreferencesScreen | 已有 | 偏好页 |

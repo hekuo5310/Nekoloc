@@ -89,3 +89,18 @@ List<ChatMessage> mergeChatMessages(List<ChatMessage> a, List<ChatMessage> b) {
   final list = byId.values.toList()..sort((x, y) => x.id.compareTo(y.id));
   return list;
 }
+
+/// 频道中的一个线程。
+class ChatThread {
+  final int id;
+  final String title;
+  final int replyCount;
+
+  const ChatThread({required this.id, required this.title, this.replyCount = 0});
+
+  factory ChatThread.fromJson(Map json) => ChatThread(
+        id: _cint(json['id']),
+        title: (json['title'] ?? '').toString(),
+        replyCount: _cint(json['reply_count']),
+      );
+}
