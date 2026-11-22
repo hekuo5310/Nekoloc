@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_state.dart';
+import 'push_poller.dart';
 import 'desktop_window.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
@@ -15,6 +16,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initDesktopWindow();
   final prefs = await SharedPreferences.getInstance();
+  await initBackgroundPush();
   runApp(NekolocApp(prefs: prefs));
 }
 

@@ -10,17 +10,28 @@ import 'mobile_source.dart';
 import 'models.dart';
 import 'oauth/rsa.dart';
 import 'oauth/webview_login.dart';
+import 'push_poller.dart';
 import 'push_watch.dart';
+import 'system_notifier.dart';
 import 'update_checker.dart';
 
-/// åºç¨åæéçæ¿è½½èï¼åå°è½®è¯¢å°çæ°éç¥ä»¥æ¨ªå¹å±ç¤ºï¼ã
+/// 应用内提醒的承载者（前台轮询到的新通知以横幅展示）。
 final GlobalKey<ScaffoldMessengerState> appMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
 /// 全局应用状态：会话 + 外观
-class AppState extends ChangeNotifier {
+class AppState extends ChangeNotifier with WidgetsBindingObserver {
   final SharedPreferences prefs;
   AppState(this.prefs) {
+    WidgetsBinding.instance.addObserver(this);
     _init();
+  }
+
+  /// 应用是否在前台。前台用应用内横幅提醒，后台用系统通知。
+  bool _foreground = true;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
   }
 
   /// 站点固定为 NodeLoc 官方
@@ -41,14 +52,13 @@ class AppState extends ChangeNotifier {
   bool get isLoggedIn => user != null;
   DiscourseApi get api => _api ?? (throw StateError('API 未初始化'));
 
-  /// å½åè´¦å·å±è½ï¼å¿½ç¥ï¼çç¨æ·åãç»å½åä»ç«ç¹è¯»åï¼éåºæ¶æ¸ç©ºã
+  /// 当前账号屏蔽（忽略）的用户名。登录后从站点读取，退出时清空。
   final Set<String> _blocked = {};
   Set<String> get blockedUsernames => Set.unmodifiable(_blocked);
   bool isBlocked(String? username) => username != null && _blocked.contains(username);
 
-  /// æ¶æ¯æéè®¾ç½®ä¸æ°´ä½çº¿ï¼åªå¨æ¬æºä¿å­ï¼æ°´ä½çº¿éè´¦å·åæ¢æ¸ç©ºï¼ã
+  /// 消息提醒设置与水位线（只在本机保存，水位线随账号切换清空）。
   PushSettings pushSettings = const PushSettings();
-  PushWatchState _pushState = const PushWatchState();
   Timer? _pushTimer;
 
   static const Duration _pushInterval = Duration(minutes: 15);
@@ -65,16 +75,7 @@ class AppState extends ChangeNotifier {
     };
     _userApiKey = prefs.getString('user_api_key');
     postSourceLevel = prefs.getInt('post_source_level') ?? 4;
-    pushSettings = PushSettings(
-      replies: prefs.getBool('push_replies') ?? true,
-      likes: prefs.getBool('push_likes') ?? true,
-      messages: prefs.getBool('push_messages') ?? true,
-      system: prefs.getBool('push_system') ?? true,
-    );
-    _pushState = PushWatchState(
-      watermark: prefs.getInt('push_watermark') ?? 0,
-      baselineDone: prefs.getBool('push_baseline') ?? false,
-    );
+    pushSettings = pushSettingsFromPrefs(prefs);
     await _createApi();
     try {
       siteInfo = await api.siteBasicInfo();
@@ -115,45 +116,46 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// åå°æ¶æ¯æéï¼ç»å½åæ¯ 15 åéæåä¸æ¬¡æªè¯»éç¥ã
-  /// ç¬¬ä¸æ¬¡æåæååªè®¾åºçº¿ï¼è§ push_watch.dartï¼ï¼ä¸ä¼æç§¯åçæªè¯»å¨é¨å¼¹åºã
+  /// 前台消息提醒：登录后每 15 分钟拉取一次未读通知。
+  /// 第一次成功拉取只设基线（见 push_watch.dart），不会把积压的未读全部弹出。
   void _restartPushPolling() {
     _pushTimer?.cancel();
     _pushTimer = null;
-    if (!isLoggedIn) return;
+    if (!isLoggedIn) {
+      unawaited(scheduleBackgroundPush(false));
+      return;
+    }
+    unawaited(scheduleBackgroundPush(true));
     _pushTimer = Timer.periodic(_pushInterval, (_) => pollPush());
     unawaited(pollPush());
   }
 
+  /// 拉取一次未读通知并提醒：前台显示应用内横幅，后台（或不可见时）发系统通知。
   Future<void> pollPush() async {
     if (!isLoggedIn) return;
     try {
-      final items = await api.notifications();
-      final plan = planPushAlerts(items, _pushState, pushSettings);
-      _pushState = plan.next;
-      await prefs.setInt('push_watermark', plan.next.watermark);
-      await prefs.setBool('push_baseline', plan.next.baselineDone);
-      for (final n in plan.toAlert) {
-        appMessengerKey.currentState?.showSnackBar(
-          SnackBar(content: Text(pushAlertText(n))),
-        );
+      final alerts = await runPushPoll(prefs, api);
+      for (final n in alerts) {
+        final text = pushAlertText(n);
+        if (_foreground) {
+          appMessengerKey.currentState?.showSnackBar(SnackBar(content: Text(text)));
+        } else {
+          await SystemNotifier.show(n.id, text);
+        }
       }
     } catch (_) {
-      // å¤±è´¥å°±ç­ä¸ä¸æ¬¡è½®è¯¢ï¼ä¸ææ°ç¨æ·ã
+      // 失败就等下一次轮询，不打扰用户。
     }
   }
 
   void setPushSettings(PushSettings s) {
     pushSettings = s;
-    prefs.setBool('push_replies', s.replies);
-    prefs.setBool('push_likes', s.likes);
-    prefs.setBool('push_messages', s.messages);
-    prefs.setBool('push_system', s.system);
+    unawaited(savePushSettings(prefs, s));
     notifyListeners();
   }
 
-  /// ä»èªå·±çèµæè¯»åå¿½ç¥ååï¼æå¡ç«¯åªå¨æ¬äººèµæéè¿å ignored_usernamesï¼ã
-  /// å¤±è´¥æ¶ä¿çåååï¼é¿åä¸æ¬¡ç½ç»æå¨å°±æå·²å±è½çç¨æ·éæ°æ¾ç¤ºåºæ¥ã
+  /// 从自己的资料读取忽略名单（服务端只在本人资料里返回 ignored_usernames）。
+  /// 失败时保留原名单，避免一次网络抖动就把已屏蔽的用户重新显示出来。
   Future<void> reloadBlocked() async {
     final me = user?.username;
     if (me == null) {
@@ -169,7 +171,7 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// ä¹è§æ´æ°ï¼è°ç¨æ¹åæ¹æ¬å°ååï¼å¤±è´¥æ¶åç¨åä¸æ¹æ³åæ»ã
+  /// 乐观更新：调用方先改本地名单，失败时再用同一方法回滚。
   void setBlocked(String username, bool blocked) {
     final changed = blocked ? _blocked.add(username) : _blocked.remove(username);
     if (changed) notifyListeners();
@@ -250,9 +252,8 @@ class AppState extends ChangeNotifier {
     _blocked.clear();
     _pushTimer?.cancel();
     _pushTimer = null;
-    _pushState = const PushWatchState();
-    await prefs.remove('push_watermark');
-    await prefs.remove('push_baseline');
+    await resetPushState(prefs);
+    unawaited(scheduleBackgroundPush(false));
     notifyListeners();
   }
 

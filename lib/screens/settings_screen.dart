@@ -215,27 +215,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   const ListTile(
                     leading: Icon(Icons.notifications_outlined),
-                    title: Text('æ¶æ¯æé'),
-                    subtitle: Text('åºç¨è¿è¡æé´æ¯ 15 åéæ£æ¥ä¸æ¬¡æ°éç¥',
+                    title: Text('消息提醒'),
+                    subtitle: Text('应用运行期间每 15 分钟检查一次新通知',
                         style: TextStyle(fontSize: 12)),
                   ),
                   SwitchListTile(
-                    title: const Text('åå¤ä¸æå'),
+                    title: const Text('回复与提及'),
                     value: app.pushSettings.replies,
                     onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(replies: v)),
                   ),
                   SwitchListTile(
-                    title: const Text('ç¹èµä¸è¡¨æ'),
+                    title: const Text('点赞与表情'),
                     value: app.pushSettings.likes,
                     onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(likes: v)),
                   ),
                   SwitchListTile(
-                    title: const Text('ç§ä¿¡ä¸èå¤©'),
+                    title: const Text('私信与聊天'),
                     value: app.pushSettings.messages,
                     onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(messages: v)),
                   ),
                   SwitchListTile(
-                    title: const Text('å¶ä»éç¥'),
+                    title: const Text('其他通知'),
                     value: app.pushSettings.system,
                     onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(system: v)),
                   ),

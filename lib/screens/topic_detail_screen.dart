@@ -298,17 +298,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   }
 
   /// 首帖工具栏和逐楼菜单共用同一收藏状态。
-  /// æèµæååéæ°å è½½è¯é¢ï¼è®©æèµæ»é¢ä»æå¡ç«¯å·æ°ã
+  /// 打赏成功后重新加载话题，让打赏总额从服务端刷新。
   Future<void> _rewardPost(Post post) async {
     final api = context.read<AppState>().api;
     final sent = await showRewardDialog(context, api, post);
     if (sent && mounted) {
-      _hint('å·²æèµ @${post.username}');
+      _hint('已打赏 @${post.username}');
       _load();
     }
   }
 
-  /// åä¸æ½å¥ï¼æå¡ç«¯è¿åææ°çæ½å¥ç¶æï¼åªæ¿æ¢è¿ä¸æ¥¼ã
+  /// 参与抽奖：服务端返回最新的抽奖状态，只替换这一楼。
   /// 查看楼层的原始 Markdown（可选中复制）。
   Future<void> _showPostSource(Post post) async {
     final api = context.read<AppState>().api;
@@ -347,7 +347,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     final posts = [...d.posts];
     posts[idx] = posts[idx].copyWith(lottery: next);
     setState(() => _detail = _copyWithPosts(d, posts));
-    _hint('å·²åä¸æ½å¥');
+    _hint('已参与抽奖');
   }
 
   Future<void> _toggleBookmark([Post? target]) async {

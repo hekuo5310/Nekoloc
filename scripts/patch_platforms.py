@@ -111,6 +111,14 @@ def patch_android():
             '    <uses-permission android:name="android.permission.INTERNET"/>',
             1,
         )
+    # 系统通知（Android 13+ 需要运行时授权，清单里也要声明）
+    if 'android.permission.POST_NOTIFICATIONS' not in m:
+        m = m.replace(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+            '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>',
+            1,
+        )
     m = m.replace(f'android:label="{PROJECT_NAME}"', f'android:label="{APP_LABEL}"')
     write(p, m)
 

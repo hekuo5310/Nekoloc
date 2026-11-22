@@ -26,6 +26,8 @@ dependencies:
   window_manager: ^0.4.3
   device_info_plus: ^13.2.0
   markdown: ^7.3.1
+  flutter_local_notifications: ^23.0.3
+  workmanager: ^0.10.10
 
 dev_dependencies:
   flutter_test:
