@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -52,6 +53,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   String? _error;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _fillingGap = false;
   bool _likingBusy = false;
   /// 阅读器内的嵌套视图开关：打开后主体换成嵌套回复树。
   bool _nestedMode = false;
@@ -179,7 +181,9 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
-  TopicDetail _copyWithPosts(TopicDetail d, List<Post> posts, {int? nextAfter, bool updateCursor = false}) => TopicDetail(
+  TopicDetail _copyWithPosts(TopicDetail d, List<Post> posts,
+          {int? nextAfter, bool updateCursor = false, int? gapAfter, bool updateGap = false}) =>
+      TopicDetail(
         id: d.id,
         title: d.title,
         slug: d.slug,
@@ -197,7 +201,52 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         redEnvelope: d.redEnvelope,
         nextAfter: updateCursor ? nextAfter : d.nextAfter,
         canReply: d.canReply,
+        gapAfter: updateGap ? gapAfter : d.gapAfter,
+        gapBefore: updateGap && gapAfter == null ? null : d.gapBefore,
       );
+
+  /// 补齐定位跳转跳过的楼层：每次取缺口起点之后的一页，直到接上目标楼层。
+  Future<void> _fillGap() async {
+    final d = _detail;
+    if (d == null || _fillingGap || !d.hasGap) return;
+    setState(() => _fillingGap = true);
+    try {
+      final page = await context.read<AppState>().api.topicPostsAfter(widget.topicId, d.gapAfter!);
+      if (!mounted) return;
+      final latest = _detail ?? d;
+      final before = latest.gapBefore ?? d.gapBefore!;
+      final currentIds = latest.posts.map((p) => p.id).toSet();
+      final blocked = context.read<AppState>().blockedUsernames;
+      final inGap = page.posts.where((p) => p.postNumber < before).toList();
+      final fresh = visiblePosts(inGap.where((p) => !currentIds.contains(p.id)).toList(), blocked);
+      final merged = [...latest.posts, ...fresh]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      final reached = inGap.map((p) => p.postNumber).fold(latest.gapAfter ?? 0, max);
+      final closed = page.nextAfter == null || inGap.length < page.posts.length || reached + 1 >= before ||
+          reached <= (latest.gapAfter ?? 0);
+      setState(() => _detail = _copyWithPosts(latest, merged, gapAfter: closed ? null : reached, updateGap: true));
+    } catch (e) {
+      _hint('加载中间楼层失败：${friendlyError(e)}');
+    } finally {
+      if (mounted) setState(() => _fillingGap = false);
+    }
+  }
+
+  Widget _gapButton(TopicDetail d) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: _fillingGap
+              ? const NekolocLoadingFooter()
+              : OutlinedButton.icon(
+                  onPressed: _fillGap,
+                  icon: const Icon(Icons.unfold_more, size: 20),
+                  label: Text('加载中间楼层（#${d.gapAfter! + 1} – #${d.gapBefore! - 1}）'),
+                ),
+        ),
+      );
+
+  Widget _postWithGap(TopicDetail d, Post post) => d.hasGap && post.postNumber == d.gapAfter
+      ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_postCard(d, post), _gapButton(d)])
+      : _postCard(d, post);
 
   /// 新版站点的“赞”就是赞成票。
   Future<void> _toggleLike(Post post) => _vote(post, 'up');
@@ -690,7 +739,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                               if (focused.isNotEmpty)
                                 Padding(padding: const EdgeInsets.all(8),
                                   child: Text('已定位到 #${focused.first.postNumber}')),
-                              _postCard(d, displayPosts.first),
+                              focused.isNotEmpty ? _postCard(d, displayPosts.first) : _postWithGap(d, displayPosts.first),
                             ],
                           );
                         }
@@ -702,7 +751,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                   _focusedPostId = null;
                                   _focusedPostNumber = null;
                                 });
-                                _load();
+                                // 已加载的首页与定位楼层保留下来，中间缺口可按需补齐。
+                                if (_detail == null) {
+                                  _load();
+                                }
                               },
                               icon: const Icon(Icons.forum_outlined), label: const Text('查看完整话题')));
                           }
@@ -733,7 +785,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             ),
                           );
                         }
-                        return _postCard(d, displayPosts[i]);
+                        return focused.isNotEmpty ? _postCard(d, displayPosts[i]) : _postWithGap(d, displayPosts[i]);
                       },
                     ),
     );

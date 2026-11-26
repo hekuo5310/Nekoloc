@@ -550,14 +550,21 @@ class DiscourseApi {
     final moderate = (page['permissions'] is Map) && (page['permissions'] as Map)['moderate'] == true;
     var rawPosts = ((page['posts'] as List?) ?? const []).whereType<Map>().toList();
     var nextAfter = toInt(page['next_after']);
+    int? gapAfter;
+    int? gapBefore;
     if (postNumber != null && postNumber > 1 && !rawPosts.any((p) => toInt(p['post_number']) == postNumber)) {
       try {
         final later = await _get('/api/v1/topics/$id', query: {'limit': _page, 'after': postNumber - 1});
         final more = ((later['posts'] as List?) ?? const []).whereType<Map>();
         final seen = rawPosts.map((p) => toInt(p['id'])).toSet();
+        final firstPageEnd = rawPosts.map((p) => toInt(p['post_number']) ?? 0).fold(0, max);
         rawPosts = [...rawPosts, ...more.where((p) => !seen.contains(toInt(p['id'])))];
-        // 中间跳过的楼层不再补；继续加载从定位楼层之后接着往下。
+        // 中间的楼层记为缺口，阅读器可以按需补齐；继续加载从定位楼层之后接着往下。
         nextAfter = toInt(later['next_after']);
+        if (postNumber > firstPageEnd + 1) {
+          gapAfter = firstPageEnd;
+          gapBefore = postNumber;
+        }
       } catch (_) {}
     }
     var posts = rawPosts
@@ -627,6 +634,8 @@ class DiscourseApi {
       viewerId: _viewerId(),
       posts: posts,
       redEnvelope: envelope,
+      gapAfter: gapAfter,
+      gapBefore: gapBefore,
     );
   }
 

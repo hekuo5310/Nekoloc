@@ -147,6 +147,8 @@ TopicDetail topicDetailFrom(
   int? viewerId,
   List<Post>? posts,
   TopicRedEnvelope? redEnvelope,
+  int? gapAfter,
+  int? gapBefore,
 }) {
   final topic = _m(page['topic']);
   final permissions = _m(page['permissions']);
@@ -178,6 +180,8 @@ TopicDetail topicDetailFrom(
     redEnvelope: redEnvelope,
     nextAfter: _i(page['next_after']),
     canReply: permissions.containsKey('reply') ? _b(permissions['reply']) : !_b(topic['closed']),
+    gapAfter: gapAfter,
+    gapBefore: gapBefore,
   );
 }
 

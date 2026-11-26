@@ -108,6 +108,10 @@ void main() {
     final topicCalls = hits.where((h) => h.path == '/api/v1/topics/3').toList();
     expect(topicCalls, hasLength(2));
     expect(topicCalls.last.query['after'], '41');
+    // 首页只到一楼，2–41 楼记为待补的缺口。
+    expect(detail.gapAfter, 1);
+    expect(detail.gapBefore, 42);
+    expect(detail.hasGap, isTrue);
     // 红包、抽奖不存在时（404）静默忽略。
     expect(hits.any((h) => h.path == '/api/v1/topics/3/red-envelope'), isTrue);
     await expectLater(api.topic(3, postNumber: 0), throwsArgumentError);

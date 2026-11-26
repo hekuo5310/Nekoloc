@@ -452,6 +452,10 @@ class TopicDetail {
   /// 当前用户能否回复（话题关闭或无权限时为 false）。
   final bool canReply;
 
+  /// 定位跳转留下的缺口：楼层号在 (gapAfter, gapBefore) 之间的回复尚未加载。
+  final int? gapAfter;
+  final int? gapBefore;
+
   TopicDetail({
     required this.id,
     required this.title,
@@ -470,9 +474,13 @@ class TopicDetail {
     this.redEnvelope,
     this.nextAfter,
     this.canReply = true,
+    this.gapAfter,
+    this.gapBefore,
   });
 
   bool get hasMorePosts => nextAfter != null;
+
+  bool get hasGap => gapAfter != null && gapBefore != null && gapBefore! > gapAfter! + 1;
 
   factory TopicDetail.fromJson(dynamic json) {
     final ps = json['post_stream'] ?? const {};
