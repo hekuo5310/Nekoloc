@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/friendly_error.dart';
 import '../app_state.dart';
-import '../models.dart';
+import '../chat_models.dart';
 import '../widgets/common.dart';
 import 'chat_screen.dart';
-import 'composer_screen.dart';
-import 'topic_detail_screen.dart';
-import '../api/friendly_error.dart';
-import '../blocked_users.dart';
 
-/// 私信会话列表
+/// 私信列表。新版站点的私信就是聊天里的一对一对话（以及多人群聊），
+/// 不再是话题；公开频道在右上角的“聊天”里。
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
 
@@ -18,16 +16,11 @@ class MessagesScreen extends StatefulWidget {
   State<MessagesScreen> createState() => MessagesScreenState();
 }
 
-class MessagesScreenState extends State<MessagesScreen>
-    with AutomaticKeepAliveClientMixin {
-  final _topics = <Topic>[];
-  final _users = <int, UserBrief>{};
-  final _scroll = ScrollController();
+class MessagesScreenState extends State<MessagesScreen> with AutomaticKeepAliveClientMixin {
+  List<ChatChannel> _chats = const [];
   bool _loading = true;
-  bool _loadingMore = false;
-  bool _hasMore = true;
   String? _error;
-  int _page = 0;
+  void Function()? _busCancel;
 
   @override
   bool get wantKeepAlive => true;
@@ -35,48 +28,41 @@ class MessagesScreenState extends State<MessagesScreen>
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(() {
-      if (_scroll.position.extentAfter < 600 &&
-          !_loadingMore &&
-          _hasMore &&
-          !_loading) {
-        _loadMore();
-      }
-    });
     _load();
+    // 任何聊天变化都会改变会话列表（新消息、未读数）。
+    _busCancel = context.read<AppState>().bus.subscribe('/chat/list', () => _load(quiet: true));
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
+    _busCancel?.call();
     super.dispose();
   }
 
   Future<void> reload() => _load();
 
-  Future<void> _load() async {
+  Future<void> _load({bool quiet = false}) async {
     final app = context.read<AppState>();
     if (!app.isLoggedIn) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final r = await app.api.privateMessages(app.user!.username, page: 0);
-      if (!mounted) return;
+    if (!quiet) {
       setState(() {
-        _topics
-          ..clear()
-          ..addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
-        _users
-          ..clear()
-          ..addAll(r.users);
-        _hasMore = r.hasMore;
-        _page = 0;
+        _loading = true;
+        _error = null;
+      });
+    }
+    try {
+      final all = await app.api.chatChannels();
+      if (!mounted) return;
+      final blocked = app.blockedUsernames;
+      setState(() {
+        _chats = all
+            .where((c) => c.isDirect)
+            .where((c) => c.directUsername == null || !blocked.contains(c.directUsername))
+            .toList();
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || quiet) return;
       setState(() {
         _loading = false;
         _error = friendlyError(e);
@@ -84,22 +70,39 @@ class MessagesScreenState extends State<MessagesScreen>
     }
   }
 
-  Future<void> _loadMore() async {
-    if (_loadingMore || !_hasMore) return;
-    final app = context.read<AppState>();
-    setState(() => _loadingMore = true);
+  /// 输入用户名，打开与他的对话（还没聊过也可以）。
+  Future<void> _newMessage() async {
+    final ctl = TextEditingController();
+    final username = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新私信'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: '对方的用户名', prefixText: '@'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: const Text('开始聊天')),
+        ],
+      ),
+    );
+    final name = username?.replaceFirst('@', '').trim();
+    if (name == null || name.isEmpty || !mounted) return;
     try {
-      final r =
-          await app.api.privateMessages(app.user!.username, page: _page + 1);
+      final channel = await context.read<AppState>().api.openDirectChat(name);
       if (!mounted) return;
-      setState(() {
-        _topics.addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
-        _users.addAll(r.users);
-        _hasMore = r.hasMore;
-        _page += 1;
-      });
-    } catch (_) {} finally {
-      if (mounted) setState(() => _loadingMore = false);
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ChatConversationScreen(channel: channel)),
+      );
+      _load(quiet: true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('无法打开对话：${friendlyError(e)}')));
+      }
     }
   }
 
@@ -121,33 +124,18 @@ class MessagesScreenState extends State<MessagesScreen>
         title: const Text('私信'),
         actions: [
           IconButton(
-            tooltip: '聊天',
+            tooltip: '聊天频道',
             icon: const Icon(Icons.forum_outlined),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ChatChannelsScreen()),
             ),
           ),
-          IconButton(
-            tooltip: '新私信',
-            icon: const Icon(Icons.add_comment_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const ComposerScreen(isPrivateMessage: true),
-              ),
-            ),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'new_pm',
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const ComposerScreen(isPrivateMessage: true),
-          ),
-        ),
+        onPressed: _newMessage,
         icon: const Icon(Icons.edit_outlined),
         label: const Text('写私信'),
       ),
@@ -155,57 +143,48 @@ class MessagesScreenState extends State<MessagesScreen>
           ? const LoadingView()
           : _error != null
               ? ErrorView(message: _error!, onRetry: _load)
-              : _topics.isEmpty
+              : _chats.isEmpty
                   ? const EmptyView(text: '暂无私信', icon: Icons.mail_outline)
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.separated(
-                        controller: _scroll,
                         physics: const AlwaysScrollableScrollPhysics(),
-                        itemCount: _topics.length + (_hasMore ? 1 : 0),
-                        separatorBuilder: (_, __) =>
-                            const Divider(height: 1, indent: 66, endIndent: 12),
+                        itemCount: _chats.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 66, endIndent: 12),
                         itemBuilder: (context, i) {
-                          if (i >= _topics.length) {
-                            return const NekolocLoadingFooter();
-                          }
-                          final t = _topics[i];
-                          final latest = t.posters.isNotEmpty
-                              ? _users[t.posters.last.userId]
-                              : null;
+                          final c = _chats[i];
                           return ListTile(
-                            leading: UserAvatar(
-                              avatarTemplate: latest?.avatarTemplate,
-                              username: latest?.username ?? '?',
-                              size: 42,
-                            ),
+                            leading: c.isGroup
+                                ? const CircleAvatar(child: Icon(Icons.group_outlined))
+                                : UserAvatar(avatarTemplate: null, username: c.directUsername ?? c.title, size: 42),
                             title: Text(
-                              t.title.replaceAll(RegExp(r'<[^>]*>'), ''),
+                              c.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w600),
-                            ),
-                            subtitle: t.excerpt?.isNotEmpty == true
-                                ? Text(
-                                    t.excerpt!,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 12.5),
-                                  )
-                                : null,
-                            trailing: Text(
-                              '${t.postsCount} 条',
                               style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: scheme.onSurfaceVariant),
-                            ),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => TopicDetailScreen(topicId: t.id),
+                                fontSize: 14,
+                                fontWeight: c.unreadCount > 0 ? FontWeight.w700 : FontWeight.w600,
                               ),
                             ),
+                            subtitle: (c.lastExcerpt ?? '').isNotEmpty
+                                ? Text(c.lastExcerpt!,
+                                    maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5))
+                                : null,
+                            trailing: c.unreadCount > 0
+                                ? CircleAvatar(
+                                    radius: 10,
+                                    backgroundColor: scheme.primary,
+                                    child: Text('${c.unreadCount}',
+                                        style: TextStyle(fontSize: 11, color: scheme.onPrimary)),
+                                  )
+                                : (c.muted ? Icon(Icons.notifications_off_outlined, size: 16, color: scheme.onSurfaceVariant) : null),
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => ChatConversationScreen(channel: c)),
+                              );
+                              _load(quiet: true);
+                            },
                           );
                         },
                       ),

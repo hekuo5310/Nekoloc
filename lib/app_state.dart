@@ -1,6 +1,4 @@
-import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:io';
@@ -8,7 +6,8 @@ import 'dart:io';
 import 'api/discourse_api.dart';
 import 'mobile_source.dart';
 import 'models.dart';
-import 'oauth/rsa.dart';
+import 'oauth/captcha_dialog.dart';
+import 'oauth/pkce.dart';
 import 'oauth/webview_login.dart';
 import 'push_poller.dart';
 import 'message_bus.dart';
@@ -18,6 +17,13 @@ import 'update_checker.dart';
 
 /// 应用内提醒的承载者（前台轮询到的新通知以横幅展示）。
 final GlobalKey<ScaffoldMessengerState> appMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+/// 根导航器（人机验证弹窗等需要在任意页面上弹出时使用）。
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+/// 本机保存会话的键。token 与站点会话等价，只保存在本机。
+const String kAuthTokenKey = 'auth_token';
+const String kAuthTrustKey = 'auth_trust';
 
 /// 全局应用状态：会话 + 外观
 class AppState extends ChangeNotifier with WidgetsBindingObserver {
@@ -62,11 +68,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
 
   ThemeMode themeMode = ThemeMode.dark;
   DiscourseApi? _api;
-  PersistCookieJar? _jar;
   CurrentUser? user;
   SiteInfo? siteInfo;
   bool initialized = false;
-  String? _userApiKey;
 
   /// 发帖设备信息等级（对齐官方 APP 的 post_source_level）：
   /// 0 = 关闭；1 = 仅平台；3 = 平台 + 品牌；4 = 完整型号。默认完整显示。
@@ -96,7 +100,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
       'system' => ThemeMode.system,
       _ => ThemeMode.dark,
     };
-    _userApiKey = prefs.getString('user_api_key');
+    // 1.x 的 Discourse 凭据在新版站点上已经无效，直接清掉，提示重新登录。
+    unawaited(prefs.remove('user_api_key'));
     postSourceLevel = prefs.getInt('post_source_level') ?? 4;
     klipyApiKey = prefs.getString('klipy_api_key') ?? '';
     pushSettings = pushSettingsFromPrefs(prefs);
@@ -112,20 +117,33 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _createApi() async {
-    final dir = await getApplicationSupportDirectory();
-    final cookieDir = Directory('${dir.path}/cookies');
-    if (!cookieDir.existsSync()) {
-      cookieDir.createSync(recursive: true);
-    }
-    _jar = PersistCookieJar(
-      ignoreExpires: true,
-      storage: FileStorage(cookieDir.path),
-    );
     _api = DiscourseApi(
       base: baseUrl,
-      jar: _jar!,
-      userApiKey: _userApiKey,
-    );
+      token: prefs.getString(kAuthTokenKey),
+      trustToken: prefs.getString(kAuthTrustKey),
+    )
+      ..captchaSolver = solveCaptcha
+      ..onSessionRejected = _onSessionRejected;
+  }
+
+  /// 会话在别处被注销（服务端对带 token 的请求回答 401）：按退出处理，但不再请求服务端。
+  void _onSessionRejected() {
+    if (_api?.token == null) return;
+    _api?.token = null;
+    unawaited(prefs.remove(kAuthTokenKey));
+    if (user != null) {
+      user = null;
+      _blocked.clear();
+      _restartPushPolling();
+      notifyListeners();
+    }
+  }
+
+  Future<void> _saveSession() async {
+    final t = api.token;
+    if (t != null) await prefs.setString(kAuthTokenKey, t);
+    final trust = api.trustToken;
+    if (trust != null) await prefs.setString(kAuthTrustKey, trust);
   }
 
   /// 静默刷新当前用户（不触发 UI loading）
@@ -182,11 +200,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  /// 当前会话的站点 Cookie（用于把登录状态交给应用内的 WebView，例如小程序外壳）。
+  /// 交给应用内 WebView（例如小程序外壳）的站点会话 Cookie。
+  /// 新版站点的会话 Cookie `nl_session` 的值就是登录 token。
   Future<List<Cookie>> sessionCookies() async {
-    final jar = _jar;
-    if (jar == null) return const [];
-    return jar.loadForRequest(Uri.parse(baseUrl));
+    final t = _api?.token;
+    if (t == null) return const [];
+    return [Cookie('nl_session', t)];
   }
 
   void setPushSettings(PushSettings s) {
@@ -195,19 +214,18 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  /// 从自己的资料读取忽略名单（服务端只在本人资料里返回 ignored_usernames）。
+  /// 读取屏蔽名单（`/me/blocks`）。
   /// 失败时保留原名单，避免一次网络抖动就把已屏蔽的用户重新显示出来。
   Future<void> reloadBlocked() async {
-    final me = user?.username;
-    if (me == null) {
+    if (user == null) {
       _blocked.clear();
       return;
     }
     try {
-      final profile = await api.userProfile(me);
+      final names = await api.blockedUsernames();
       _blocked
         ..clear()
-        ..addAll(profile.ignoredUsernames);
+        ..addAll(names);
       notifyListeners();
     } catch (_) {}
   }
@@ -218,67 +236,32 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (changed) notifyListeners();
   }
 
+  /// 账号密码登录。站点开启人机验证时，移动端会先弹出验证；桌面端请用浏览器登录。
   Future<void> login(String login, String password, String? totp) async {
-    // 若存在旧的 API Key 会话，先清理，避免混合
-    if (_userApiKey != null) {
-      _userApiKey = null;
-      await prefs.remove('user_api_key');
-      await _createApi();
-    }
     await api.login(login: login, password: password, totp: totp);
+    await _saveSession();
     await refreshUser();
   }
 
-  /// 浏览器授权登录（支持第三方 OAuth / 邮箱登录链接 / 2FA 等全部登录方式）。
-  /// 流程：生成一次性 RSA 密钥对 -> 内置浏览器打开 Discourse 授权页 ->
-  /// 用户以任意方式登录并授权 -> 拦截 discourse:// 回调 -> 解密得到 User-Api-Key。
-  Future<void> loginViaBrowser(BuildContext context) async {
-    if (_userApiKey != null) {
-      _userApiKey = null;
-      await prefs.remove('user_api_key');
-      await _createApi();
-    }
-
-    final bundle = generateRsaKeyPair();
-    final nonce = randomHex(32);
-    final clientId = randomHex(24);
-    final authUrl = Uri.parse('$baseUrl/user-api-key/new').replace(queryParameters: {
-      'application_name': 'Nekoloc',
-      'client_id': clientId,
-      'scopes': 'read,write,session_info,notifications',
-      'auth_redirect': 'discourse://auth_redirect',
-      'nonce': nonce,
-      'public_key': bundle.publicKeyPem,
-    }).toString();
-
-    // ignore: use_build_context_synchronously
-    final callbackUrl = await openAuthorizeWindow(context, authUrl);
-    if (callbackUrl == null) {
-      throw ApiException('已取消授权');
-    }
-
-    final uri = Uri.parse(callbackUrl);
-    if (uri.queryParameters['denied'] == 'true') {
-      throw ApiException('你拒绝了授权');
-    }
-    final payload = uri.queryParameters['payload'];
-    if (payload == null || payload.isEmpty) {
-      throw ApiException('授权回调缺少凭据');
-    }
-
-    final data = decryptUserApiKeyPayload(
-      bundle: bundle,
-      payloadB64: payload,
-      expectedNonce: nonce,
+  /// 浏览器登录（站点登录页：密码、动态码、第三方账号、人机验证都在页面里完成）。
+  /// 流程：生成 PKCE verifier → 内置浏览器打开站点登录页 → 登录后站点跳转
+  /// nodeloc://auth?code=… → 拦截跳转 → 用 code + verifier 换取会话 token。
+  /// [providerUrl] 为某个第三方登录入口（为空时打开站点登录页）。
+  Future<void> loginViaBrowser(BuildContext context, {String? providerUrl}) async {
+    final verifier = Pkce.verifier();
+    final authUrl = browserLoginUrl(
+      base: baseUrl,
+      challenge: Pkce.challenge(verifier),
+      providerUrl: providerUrl,
     );
-    final key = data?['key']?.toString();
-    if (data == null || key == null || key.isEmpty) {
-      throw ApiException('授权凭据解密失败，请重试');
-    }
-
-    _userApiKey = key;
-    await prefs.setString('user_api_key', key);
-    await _createApi();
+    final callbackUrl = await openAuthorizeWindow(context, authUrl, callbackScheme: 'nodeloc://');
+    if (callbackUrl == null) throw ApiException('已取消授权');
+    final uri = Uri.parse(callbackUrl);
+    if (uri.queryParameters['error'] != null) throw ApiException('已取消授权');
+    final code = uri.queryParameters['code'];
+    if (code == null || code.isEmpty) throw ApiException('授权回调缺少凭据，请重试');
+    await api.exchangeAuthCode(code, verifier: verifier);
+    await _saveSession();
     await refreshUser();
   }
 
@@ -286,9 +269,8 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await api.logout();
     } catch (_) {}
-    _userApiKey = null;
-    await prefs.remove('user_api_key');
-    await _jar?.deleteAll();
+    api.token = null;
+    await prefs.remove(kAuthTokenKey);
     user = null;
     _blocked.clear();
     bus.stop();

@@ -147,10 +147,15 @@ class _ComposerScreenState extends State<ComposerScreen> {
       for (final c in cats) {
         if (c.parentId == null) parents[c.id] = c.name;
       }
+      // 只列出能发话题的节点：仅版主可发的不列；需要成员身份的，已加入的排在前面。
       final usable = cats
-          .where((c) => c.parentId != null && !c.readRestricted)
+          .where((c) => !c.readRestricted && c.topicPolicy != 'moderators')
           .toList()
-        ..sort((a, b) => (a.position ?? 99).compareTo(b.position ?? 99));
+        ..sort((a, b) {
+          final joined = (b.isJoined ? 1 : 0) - (a.isJoined ? 1 : 0);
+          if (joined != 0) return joined;
+          return b.memberCount.compareTo(a.memberCount);
+        });
       if (!mounted) return;
       setState(() {
         _categories = usable;
@@ -302,6 +307,10 @@ class _ComposerScreenState extends State<ComposerScreen> {
     }
     if (widget.isNewTopic && title.isEmpty) {
       setState(() => _error = '请输入标题');
+      return;
+    }
+    if (widget.isNewTopic && widget.editPostId == null && _selectedCategory == null) {
+      setState(() => _error = '请选择发帖的节点');
       return;
     }
     if (raw.trim().isEmpty) {
@@ -488,7 +497,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   if (_categories != null)
                     DropdownButtonFormField<int>(
                       value: _selectedCategory,
-                      decoration: const InputDecoration(hintText: '选择分类（可选）'),
+                      decoration: const InputDecoration(hintText: '选择节点'),
                       items: [
                         for (final c in _categories!)
                           DropdownMenuItem(
@@ -507,7 +516,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
                                 const SizedBox(width: 8),
                                 Flexible(
                                   child: Text(
-                                    '${_parentNames?[c.parentId] ?? ''} / ${c.name}',
+                                    '${c.parentId == null ? '' : '${_parentNames?[c.parentId] ?? ''} / '}${c.name}'
+                                    '${c.topicPolicy == 'members' && !c.isJoined ? '（需先加入）' : ''}',
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 13.5),
                                   ),

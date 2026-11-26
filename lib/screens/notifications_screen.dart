@@ -91,34 +91,49 @@ class NotificationsScreenState extends State<NotificationsScreen>
     }
   }
 
+  // 类型编号与 v1_mapping.dart 中的映射一致（沿用 Discourse 的编号）。
   IconData _iconFor(int type) {
     return switch (type) {
-      1 => Icons.reply, // 回复
-      2 => Icons.format_quote, // 引用
-      3 => Icons.link, // 链接
-      4 => Icons.alternate_email, // @提及
-      5 => Icons.mail_outline, // 私信
-      6 => Icons.edit, // 编辑
-      7 || 8 || 9 || 10 || 11 || 12 => Icons.favorite, // 点赞系
-      _ => Icons.notifications_none,
+      1 => Icons.alternate_email, // 提及
+      2 => Icons.reply, // 回复
+      5 || 19 => Icons.thumb_up_alt_outlined, // 赞同
+      9 => Icons.forum_outlined, // 关注的话题有新回帖
+      11 => Icons.repeat, // 转发
+      30 => Icons.mail_outline, // 私信
+      36 => Icons.hub_outlined, // 节点新帖
+      800 => Icons.person_add_alt_1, // 新关注者
+      801 => Icons.article_outlined, // 关注的人发了新主题
+      _ => Icons.notifications_none, // 系统通知
     };
   }
 
   String _verbFor(int type) {
     return switch (type) {
-      1 => '回复了你',
-      2 => '引用了你的帖子',
-      3 => '链接到你的帖子',
-      4 => '提及了你',
-      5 => '给你发送了私信',
-      6 => '编辑了你的帖子',
-      7 => '赞了你的帖子',
-      8 => '赞了你的帖子',
-      9 => '赞了你的帖子',
-      12 => '回复了你',
+      1 => '提及了你',
+      2 => '回复了你',
+      5 => '赞同了你的帖子',
+      19 => '等人赞同了你的帖子',
+      9 => '回复了你关注的话题',
+      11 => '转发了你的帖子',
+      30 => '给你发来私信',
+      36 => '在你加入的节点发了新帖',
+      800 => '关注了你',
+      801 => '发布了新话题',
       _ => '向你发来了通知',
     };
   }
+
+  /// 系统通知没有发起人，标题就是通知本身。
+  String _titleFor(NotificationItem n) {
+    if (n.type == 0 || n.displayUsername.isEmpty) {
+      return n.topicTitle.isEmpty ? '系统通知' : n.topicTitle.replaceAll(RegExp(r'<[^>]*>'), '');
+    }
+    return '${n.displayUsername} ${_verbFor(n.type)}';
+  }
+
+  String _subtitleFor(NotificationItem n) =>
+      n.type == 0 || n.displayUsername.isEmpty ? '' : n.topicTitle.replaceAll(RegExp(r'<[^>]*>'), '');
+
 
   @override
   Widget build(BuildContext context) {
@@ -180,7 +195,7 @@ class NotificationsScreenState extends State<NotificationsScreen>
                               ),
                             ),
                             title: Text(
-                              '${n.displayUsername} ${_verbFor(n.type)}',
+                              _titleFor(n),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -190,7 +205,7 @@ class NotificationsScreenState extends State<NotificationsScreen>
                               ),
                             ),
                             subtitle: Text(
-                              n.topicTitle.replaceAll(RegExp(r'<[^>]*>'), ''),
+                              _subtitleFor(n),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 12.5),

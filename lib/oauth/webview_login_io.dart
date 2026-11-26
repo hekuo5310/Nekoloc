@@ -10,7 +10,8 @@ import '../update_checker.dart';
 /// 移动端：应用内全屏 WebView 路由
 class _WebViewLoginPage extends StatefulWidget {
   final String url;
-  const _WebViewLoginPage({required this.url});
+  final String callbackScheme;
+  const _WebViewLoginPage({required this.url, required this.callbackScheme});
 
   @override
   State<_WebViewLoginPage> createState() => _WebViewLoginPageState();
@@ -33,7 +34,7 @@ class _WebViewLoginPageState extends State<_WebViewLoginPage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (request) {
-          if (request.url.startsWith('discourse://')) {
+          if (request.url.startsWith(widget.callbackScheme)) {
             _maybeFinish(request.url);
             return NavigationDecision.prevent;
           }
@@ -47,7 +48,7 @@ class _WebViewLoginPageState extends State<_WebViewLoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('登录并授权', style: TextStyle(fontSize: 16)),
+        title: const Text('登录 NodeLoc', style: TextStyle(fontSize: 16)),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.of(context).pop(),
@@ -58,7 +59,8 @@ class _WebViewLoginPageState extends State<_WebViewLoginPage> {
   }
 }
 
-Future<String?> openAuthorizeWindow(BuildContext context, String authUrl) async {
+Future<String?> openAuthorizeWindow(BuildContext context, String authUrl,
+    {String callbackScheme = 'nodeloc://'}) async {
   // ---------------------------------------------------------------- 桌面端
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
     final completer = Completer<String?>();
@@ -68,13 +70,13 @@ Future<String?> openAuthorizeWindow(BuildContext context, String authUrl) async 
       configuration: const CreateConfiguration(
         windowHeight: 720,
         windowWidth: 500,
-        title: 'Nekoloc 登录授权',
+        title: 'Nekoloc 登录',
         titleBarHeight: 40,
       ),
     );
     webview.setApplicationNameForUserAgent('Nekoloc/$kAppVersion');
     webview.setOnUrlRequestCallback((url) {
-      if (url.startsWith('discourse://')) {
+      if (url.startsWith(callbackScheme)) {
         if (!settled) {
           settled = true;
           completer.complete(url);
@@ -104,7 +106,7 @@ Future<String?> openAuthorizeWindow(BuildContext context, String authUrl) async 
     return Navigator.of(context, rootNavigator: true).push<String?>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _WebViewLoginPage(url: authUrl),
+        builder: (_) => _WebViewLoginPage(url: authUrl, callbackScheme: callbackScheme),
       ),
     );
   }

@@ -33,6 +33,7 @@ class NekolocApp extends StatelessWidget {
           return MaterialApp(
             title: 'Nekoloc',
             scaffoldMessengerKey: appMessengerKey,
+            navigatorKey: appNavigatorKey,
             debugShowCheckedModeBanner: false,
             themeMode: app.themeMode,
             theme: NL.light(),

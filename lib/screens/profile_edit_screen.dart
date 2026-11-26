@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../api/friendly_error.dart';
 import '../app_state.dart';
 
-/// 编辑个人资料：昵称、个人简介（Markdown）、网站、地点、头衔。
+/// 编辑个人资料：昵称、个人简介（Markdown）、网站、地点。新版站点的头衔由等级决定，不能自选。
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({super.key});
 
@@ -17,9 +17,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _bio = TextEditingController();
   final _website = TextEditingController();
   final _location = TextEditingController();
-  /// 头衔只能从已获得且允许作为头衔的徽章中选择；空字符串表示不使用头衔。
-  String _titleValue = '';
-  List<String> _titleOptions = const [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -56,12 +53,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       _bio.text = f['bio_raw'] ?? '';
       _website.text = f['website'] ?? '';
       _location.text = f['location'] ?? '';
-      final badges = await app.api.userBadges(me);
-      final titles = badges.where((b) => b.allowTitle).map((b) => b.name).toSet().toList();
-      final current = f['title'] ?? '';
-      if (!mounted) return;
-      _titleValue = current;
-      _titleOptions = {...titles, if (current.isNotEmpty) current}.toList();
       setState(() => _loading = false);
     } catch (e) {
       if (mounted) {
@@ -86,7 +77,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         bioRaw: _bio.text,
         website: _website.text.trim(),
         location: _location.text.trim(),
-        title: _titleValue,
+        title: '',
       );
       await app.refreshUser();
       if (!mounted) return;
@@ -134,21 +125,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         labelText: '个人简介（支持 Markdown）',
                         alignLabelWithHint: true,
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: _titleValue,
-                      decoration: InputDecoration(
-                        labelText: '头衔',
-                        helperText: _titleOptions.isEmpty
-                            ? '还没有可用作头衔的徽章'
-                            : '只能选择已获得且允许作为头衔的徽章',
-                      ),
-                      items: [
-                        const DropdownMenuItem(value: '', child: Text('不使用头衔')),
-                        for (final t in _titleOptions) DropdownMenuItem(value: t, child: Text(t)),
-                      ],
-                      onChanged: (v) => setState(() => _titleValue = v ?? ''),
                     ),
                     const SizedBox(height: 12),
                     TextField(

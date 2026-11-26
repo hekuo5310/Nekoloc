@@ -2,94 +2,85 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:dio/dio.dart';
+
 import 'api/discourse_api.dart';
 
-/// Discourse MessageBus 的长轮询客户端：聊天消息与新通知的实时推送。
+/// 实时推送：读取站点的事件流（SSE，`/api/v1/notifications/stream`），
+/// 翻译成界面一直使用的频道名再通知订阅者。
 ///
-/// 协议要点（与参考客户端 MessageBus.kt 一致）：
-/// - 请求带上每个频道的最新位置（position），服务端在有新事件时立即返回；
-/// - 响应是 JSON 数组，多段时以 `|` 分隔；`/__status` 事件给出各频道当前位置，
-///   新订阅的频道从“现在”开始，而不是回放历史；
-/// - 请求头 `Dont-Chunk: true` 让响应一次性返回，而不是流式分块。
+/// 只传信号：事件表示“这里有变化”，订阅者自己重新拉取。事件流里与界面有关的两类：
+/// - `unread`：通知数变化 → 触发所有 `/notification/…` 频道；
+/// - `chat`：`{type, conversation, …}` → 触发 `/chat/{conversation}`；`resync` 触发全部。
+/// 对齐参考客户端 NodeLoc Android 的 MessageBusClient。
 
-class BusEvent {
-  final String channel;
-  final int messageId;
-  final dynamic data;
-
-  const BusEvent({required this.channel, required this.messageId, this.data});
+/// 一个 SSE 事件。
+class SseEvent {
+  final String event;
+  final String data;
+  const SseEvent(this.event, this.data);
 }
 
-/// 把响应体拆成事件列表。无法解析的段落会被忽略，不影响其他段落。
-List<BusEvent> parseBusBody(String body) {
-  final events = <BusEvent>[];
-  for (final part in body.split('|')) {
-    final text = part.trim();
-    if (!text.startsWith('[')) continue;
-    final decoded = jsonDecode(text);
-    if (decoded is! List) continue;
-    for (final e in decoded) {
-      if (e is! Map) continue;
-      final channel = e['channel']?.toString() ?? '';
-      if (channel.isEmpty) continue;
-      events.add(BusEvent(
-        channel: channel,
-        messageId: e['message_id'] is num ? (e['message_id'] as num).toInt() : -1,
-        data: e['data'],
-      ));
+/// 逐行解析 SSE。按行喂入，遇到空行时产出一个事件；注释行（以冒号开头，即心跳）忽略。
+class SseParser {
+  String _event = 'message';
+  final StringBuffer _data = StringBuffer();
+
+  SseEvent? addLine(String line) {
+    if (line.isEmpty) {
+      if (_data.isEmpty && _event == 'message') return null;
+      final out = SseEvent(_event, _data.toString());
+      _event = 'message';
+      _data.clear();
+      return out;
     }
+    if (line.startsWith(':')) return null;
+    if (line.startsWith('event:')) {
+      _event = line.substring(6).trim();
+    } else if (line.startsWith('data:')) {
+      if (_data.isNotEmpty) _data.write('\n');
+      _data.write(line.substring(5).trim());
+    }
+    return null;
   }
-  return events;
 }
 
-/// 应用一批事件到位置表，返回本批中有新消息的频道（去重）。
-/// 只更新已订阅的频道（positions 中存在的键）。
-Set<String> applyBusEvents(Map<String, int> positions, List<BusEvent> events) {
-  final fired = <String>{};
-  for (final e in events) {
-    if (e.channel == '/__status') {
-      final statuses = e.data;
-      if (statuses is Map) {
-        for (final entry in statuses.entries) {
-          final name = entry.key.toString();
-          if (positions.containsKey(name) && entry.value is num) {
-            positions[name] = (entry.value as num).toInt();
-          }
-        }
-      }
-      continue;
-    }
-    if (!positions.containsKey(e.channel)) continue;
-    positions[e.channel] = e.messageId;
-    fired.add(e.channel);
+/// 一个事件会触发哪些已订阅的频道。纯函数，便于测试。
+Set<String> channelsFor(String event, String data, Set<String> subscribed) {
+  final out = <String>{};
+  switch (event) {
+    case 'unread':
+      out.addAll(subscribed.where((c) => c.startsWith('/notification/')));
+    case 'chat':
+      Map? payload;
+      try {
+        final parsed = jsonDecode(data);
+        if (parsed is Map) payload = parsed;
+      } catch (_) {}
+      if (payload == null) return out;
+      if (payload['type']?.toString() == 'resync') return {...subscribed};
+      final conversation = payload['conversation'];
+      final id = conversation is num ? conversation.toInt() : int.tryParse('$conversation') ?? 0;
+      if (id != 0) out.add('/chat/$id');
+      // 任何聊天变化都会改变会话列表的未读数。
+      out.addAll(subscribed.where((c) => c.startsWith('/chat/list')));
   }
-  return fired;
+  return out.where(subscribed.contains).toSet();
 }
 
 class MessageBusClient {
-  final Map<String, int> _positions = {};
   final Map<String, List<void Function()>> _listeners = {};
-  final String _clientId = _randomId();
-  int _seq = 0;
-  int _failures = 0;
   bool _running = false;
-
-  static String _randomId() {
-    final rng = Random.secure();
-    return List.generate(16, (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
-  }
+  int _failures = 0;
+  CancelToken? _cancel;
 
   /// 订阅一个频道，返回取消订阅的函数。
   void Function() subscribe(String channel, void Function() onEvent) {
-    _positions.putIfAbsent(channel, () => -1);
     _listeners.putIfAbsent(channel, () => []).add(onEvent);
     return () {
       final list = _listeners[channel];
       list?.remove(onEvent);
-      if (list != null && list.isEmpty) {
-        _listeners.remove(channel);
-        _positions.remove(channel);
-      }
+      if (list != null && list.isEmpty) _listeners.remove(channel);
     };
   }
 
@@ -103,32 +94,52 @@ class MessageBusClient {
 
   void stop() {
     _running = false;
+    _cancel?.cancel();
+    _cancel = null;
   }
+
+  void _dispatch(Set<String> channels) {
+    for (final channel in channels) {
+      for (final listener in List<void Function()>.of(_listeners[channel] ?? const [])) {
+        listener();
+      }
+    }
+  }
+
+  /// 断线期间可能错过变化，所以每次连上都让所有订阅者刷新一次。
+  void _fireAll() => _dispatch(_listeners.keys.toSet());
 
   Future<void> _loop(DiscourseApi api) async {
     while (_running) {
-      if (_positions.isEmpty) {
-        // 还没有订阅：等待，不发请求。
-        await Future<void>.delayed(const Duration(seconds: 1));
+      if (_listeners.isEmpty || !api.isLoggedIn) {
+        await Future<void>.delayed(const Duration(seconds: 2));
         continue;
       }
+      final started = DateTime.now();
+      var healthy = false;
       try {
-        final body = await api.messageBusPoll(
-          _clientId,
-          Map<String, int>.of(_positions),
-          _seq++,
-        );
-        _failures = 0;
-        final fired = applyBusEvents(_positions, parseBusBody(body));
-        for (final channel in fired) {
-          for (final listener in List<void Function()>.of(_listeners[channel] ?? const [])) {
-            listener();
-          }
+        _cancel = CancelToken();
+        final stream = await api.openEventStream(cancelToken: _cancel);
+        _fireAll();
+        final parser = SseParser();
+        await for (final line in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+          if (!_running) break;
+          final event = parser.addLine(line);
+          if (event != null) _dispatch(channelsFor(event.event, event.data, _listeners.keys.toSet()));
         }
+        // 服务端每半小时主动断开一次，属于正常结束。
+        healthy = DateTime.now().difference(started) > const Duration(seconds: 30);
       } catch (_) {
-        // 失败时指数退避，避免会话过期后不停地请求站点。
-        _failures = min(_failures + 1, 6);
-        await Future<void>.delayed(Duration(seconds: 2 << (_failures - 1)));
+        healthy = false;
+      }
+      if (!_running) break;
+      if (healthy) {
+        _failures = 0;
+        await Future<void>.delayed(const Duration(seconds: 1));
+      } else {
+        // 指数退避：会话失效或服务端故障时不要变成重连风暴（4、8、16、32 秒）。
+        _failures = min(_failures + 1, 4);
+        await Future<void>.delayed(Duration(seconds: 2 << _failures));
       }
     }
   }

@@ -154,10 +154,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
           ? await api.chatMessages(widget.channel.id)
           : await api.chatThreadMessages(widget.channel.id, tid);
       if (!mounted) return;
+      final before = _messages.isEmpty ? 0 : _messages.last.id;
       setState(() {
         _messages = mergeChatMessages(_messages, list);
         _error = null;
       });
+      final newest = _messages.isEmpty ? 0 : _messages.last.id;
+      if (newest > before) unawaited(api.markChatRead(widget.channel.id, newest));
     } catch (e) {
       if (mounted && (initial || _messages.isEmpty)) {
         setState(() => _error = friendlyError(e));
@@ -207,28 +210,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     }
   }
 
-  Future<void> _editMessage(ChatMessage m) async {
-    final ctl = TextEditingController(text: m.text);
-    final text = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('编辑消息'),
-        content: TextField(controller: ctl, maxLines: 5, minLines: 1),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: const Text('保存')),
-        ],
-      ),
-    );
-    if (text == null || text.isEmpty || text == m.text || !mounted) return;
-    try {
-      await context.read<AppState>().api.editChatMessage(widget.channel.id, m.id, text);
-      await _fetch();
-    } catch (e) {
-      _toast('编辑失败：${friendlyError(e)}');
-    }
-  }
-
   Future<void> _deleteMessage(ChatMessage m) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -257,14 +238,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('编辑'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _editMessage(m);
-              },
-            ),
+            // 新版站点不能编辑已发送的消息，只能删除。
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('删除'),
@@ -334,10 +308,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   }
 
   Future<void> _pickNotificationLevel() async {
+    // 新版站点只有静音与否。
     const levels = {
-      'always': '所有消息',
-      'mention': '仅提及我',
-      'never': '不通知',
+      'always': '接收通知',
+      'never': '静音',
     };
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -377,7 +351,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
-          if (!inThread)
+          if (!inThread && widget.channel.isGroup)
             IconButton(tooltip: '成员', icon: const Icon(Icons.group_outlined), onPressed: _showMembers),
           PopupMenuButton<String>(
             onSelected: (v) {
@@ -386,9 +360,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               if (v == 'level') _pickNotificationLevel();
             },
             itemBuilder: (_) => [
-              if (!inThread) const PopupMenuItem(value: 'threads', child: Text('线程')),
-              if (!inThread) const PopupMenuItem(value: 'level', child: Text('通知设置')),
-              if (!inThread) const PopupMenuItem(value: 'leave', child: Text('离开频道')),
+              if (!inThread && widget.channel.id > 0) const PopupMenuItem(value: 'level', child: Text('通知设置')),
+              if (!inThread && !widget.channel.isDirect) const PopupMenuItem(value: 'leave', child: Text('离开频道')),
             ],
           ),
         ],

@@ -65,7 +65,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// 浏览器授权登录：支持第三方 OAuth（LinuxDo Connect 等）、邮箱登录链接等全部方式
+  /// 浏览器登录：在站点登录页完成（第三方账号、两步验证、人机验证都在页面里），完成后自动返回
   Future<void> _browserLogin() async {
     final app = context.read<AppState>();
     setState(() {
@@ -261,12 +261,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       foregroundColor: scheme.primary,
                     ),
                     icon: const Icon(Icons.open_in_browser, size: 19),
-                    label: const Text('浏览器授权登录'),
+                    label: const Text('浏览器登录'),
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    '浏览器授权登录支持第三方账号（LinuxDo Connect 等）、邮箱登录链接、\n'
-                    '2FA 等站点提供的全部登录方式，授权后自动返回本应用',
+                    '在站点登录页完成登录，支持 GitHub、X 等第三方账号、\n'
+                    '两步验证和人机验证，完成后自动返回本应用。\n'
+                    'Google 不允许在应用内页面登录，请改用其他方式',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 11.5,

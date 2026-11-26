@@ -1,46 +1,51 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nodeloc_app/message_bus.dart';
 
+List<SseEvent> parse(List<String> lines) {
+  final parser = SseParser();
+  return [for (final l in lines) parser.addLine(l)].whereType<SseEvent>().toList();
+}
+
 void main() {
-  test('拆分多段响应体', () {
-    final events = parseBusBody(
-      '[{"channel":"/chat/1","message_id":5,"data":{}}]|[{"channel":"/__status","data":{"/chat/1":7}}]',
-    );
-    expect(events.length, 2);
-    expect(events.first.channel, '/chat/1');
-    expect(events.first.messageId, 5);
-    expect(events[1].channel, '/__status');
+  test('按空行切分事件，心跳注释忽略', () {
+    final events = parse([
+      ': heartbeat',
+      'event: unread',
+      'data: {"unread":3}',
+      '',
+      'event: chat',
+      'data: {"type":"new",',
+      'data: "conversation":4}',
+      '',
+    ]);
+    expect(events.map((e) => e.event), ['unread', 'chat']);
+    expect(events.last.data, '{"type":"new",\n"conversation":4}');
   });
 
-  test('无法解析的段落被忽略', () {
-    final events = parseBusBody('not json|[{"channel":"/a","message_id":1}]');
-    expect(events.map((e) => e.channel), ['/a']);
+  test('unread 触发所有通知频道', () {
+    final fired = channelsFor('unread', '{"unread":1}', {'/notification/3', '/chat/4'});
+    expect(fired, {'/notification/3'});
   });
 
-  test('状态事件设置起始位置，不回放历史', () {
-    final positions = {'/chat/1': -1};
-    final fired = applyBusEvents(positions, parseBusBody(
-      '[{"channel":"/__status","data":{"/chat/1":42}}]',
-    ));
-    expect(positions['/chat/1'], 42);
-    expect(fired, isEmpty);
+  test('chat 触发对应会话和会话列表，未订阅的不触发', () {
+    final fired = channelsFor('chat', '{"type":"new","conversation":4}', {'/chat/4', '/chat/5', '/chat/list'});
+    expect(fired, {'/chat/4', '/chat/list'});
   });
 
-  test('已订阅频道有新事件时记录位置并标记触发，未订阅的忽略', () {
-    final positions = {'/chat/1': 10};
-    final fired = applyBusEvents(positions, parseBusBody(
-      '[{"channel":"/chat/1","message_id":11},{"channel":"/chat/2","message_id":3},{"channel":"/chat/1","message_id":12}]',
-    ));
-    expect(positions.containsKey('/chat/2'), isFalse);
-    expect(positions['/chat/1'], 12);
-    expect(fired, {'/chat/1'});
+  test('resync 让所有订阅者刷新', () {
+    final subscribed = {'/chat/4', '/notification/3'};
+    expect(channelsFor('chat', '{"type":"resync"}', subscribed), subscribed);
   });
 
-  test('取消最后一个订阅会释放频道', () {
+  test('无法解析的数据不触发任何频道', () {
+    expect(channelsFor('chat', 'not json', {'/chat/4'}), isEmpty);
+    expect(channelsFor('review', '{"pending":2}', {'/chat/4'}), isEmpty);
+  });
+
+  test('取消订阅后不再保留监听器', () {
     final client = MessageBusClient();
     final cancel = client.subscribe('/notification/3', () {});
     cancel();
-    // 再次订阅同一频道不应残留旧的监听器。
     var calls = 0;
     client.subscribe('/notification/3', () => calls++);
     expect(calls, 0);

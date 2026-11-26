@@ -78,7 +78,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       if (_focusedPostId == null && _scroll.position.extentAfter < 600 &&
           !_loadingMore &&
           !_loading &&
-          _detail!.posts.length < _detail!.stream.length) {
+          _detail!.hasMorePosts) {
         _loadMore();
       }
     });
@@ -161,24 +161,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
 
   Future<void> _loadMore() async {
     final d = _detail;
-    if (d == null || _loadingMore) return;
+    if (d == null || _loadingMore || d.nextAfter == null) return;
     setState(() => _loadingMore = true);
     try {
-      final loaded = d.posts.map((p) => p.id).toSet();
-      final nextIds =
-          d.stream.where((id) => !loaded.contains(id)).take(20).toList();
-      if (nextIds.isEmpty) {
-        setState(() => _loadingMore = false);
-        return;
-      }
-      final more =
-          await context.read<AppState>().api.topicPosts(widget.topicId, nextIds);
+      final page = await context.read<AppState>().api.topicPostsAfter(widget.topicId, d.nextAfter!);
       if (!mounted) return;
       final latest = _detail ?? d;
       final currentIds = latest.posts.map((p) => p.id).toSet();
-      final merged = [...latest.posts, ...more.where((p) => !currentIds.contains(p.id))]
-        ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
-      setState(() => _detail = _copyWithPosts(latest, merged));
+      final blocked = context.read<AppState>().blockedUsernames;
+      final fresh = visiblePosts(page.posts.where((p) => !currentIds.contains(p.id)).toList(), blocked);
+      final merged = [...latest.posts, ...fresh]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      setState(() => _detail = _copyWithPosts(latest, merged, nextAfter: page.nextAfter, updateCursor: true));
     } catch (e) {
       _hint('加载楼层失败：${friendlyError(e)}');
     } finally {
@@ -186,7 +179,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     }
   }
 
-  TopicDetail _copyWithPosts(TopicDetail d, List<Post> posts) => TopicDetail(
+  TopicDetail _copyWithPosts(TopicDetail d, List<Post> posts, {int? nextAfter, bool updateCursor = false}) => TopicDetail(
         id: d.id,
         title: d.title,
         slug: d.slug,
@@ -202,12 +195,12 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         stream: d.stream,
         tags: d.tags,
         redEnvelope: d.redEnvelope,
+        nextAfter: updateCursor ? nextAfter : d.nextAfter,
+        canReply: d.canReply,
       );
 
-  Future<void> _toggleLike(Post post) async {
-    // 心=等价于 like，走 reactions 接口
-    await _toggleReaction(post, 'heart');
-  }
+  /// 新版站点的“赞”就是赞成票。
+  Future<void> _toggleLike(Post post) => _vote(post, 'up');
 
   Future<void> _vote(Post post, String direction) async {
     final app = context.read<AppState>();
@@ -227,6 +220,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         final posts = [...d.posts];
         final latest = posts[index];
         posts[index] = latest.copyWith(
+          likeCount: toInt(result['like_count']) ?? latest.likeCount,
+          likedByMe: result.containsKey('acted') ? result['acted'] == true : latest.likedByMe,
           voteScore: toInt(result['vote_score']) ?? latest.voteScore,
           voteDirection: result['vote_direction']?.toString() ?? target,
           canVoteDown: result.containsKey('can_vote_down')
@@ -302,16 +297,6 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   }
 
   /// 首帖工具栏和逐楼菜单共用同一收藏状态。
-  /// 打赏成功后重新加载话题，让打赏总额从服务端刷新。
-  Future<void> _rewardPost(Post post) async {
-    final api = context.read<AppState>().api;
-    final sent = await showRewardDialog(context, api, post);
-    if (sent && mounted) {
-      _hint('已打赏 @${post.username}');
-      _load();
-    }
-  }
-
   /// 参与抽奖：服务端返回最新的抽奖状态，只替换这一楼。
   /// 查看楼层的原始 Markdown（可选中复制）。
   Future<void> _showPostSource(Post post) async {
@@ -342,7 +327,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     final lottery = post.lottery;
     if (lottery == null) return;
     final api = context.read<AppState>().api;
-    final next = await showLotteryDialog(context, api, lottery);
+    final next = await showLotteryDialog(context, api, lottery, postId: post.id);
     if (next == null || !mounted) return;
     final d = _detail;
     if (d == null) return;
@@ -568,10 +553,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
 
   Widget _postCard(TopicDetail detail, Post post) => _PostCard(
     post: post, detail: detail,
-    onReward: context.read<AppState>().isLoggedIn &&
-        post.username != context.read<AppState>().user?.username
-        ? () => _rewardPost(post)
-        : null,
+    // 新版站点已取消打赏。
+    onReward: null,
     onLottery: context.read<AppState>().isLoggedIn ? () => _joinLottery(post) : null,
     onSource: () => _showPostSource(post),
     onLike: () => _toggleLike(post),
@@ -666,7 +649,9 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
           ),
         ],
       ),
-      floatingActionButton: d == null || d.closed || d.archived
+      // 未登录时仍显示回复按钮（点击提示登录）；已登录但无权回复时才隐藏。
+      floatingActionButton: d == null || d.closed || d.archived ||
+              (context.read<AppState>().isLoggedIn && !d.canReply)
           ? null
           : FloatingActionButton.extended(
               onPressed: () => _reply(),
@@ -721,7 +706,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                               },
                               icon: const Icon(Icons.forum_outlined), label: const Text('查看完整话题')));
                           }
-                          if (d.posts.length < d.stream.length) {
+                          if (d.hasMorePosts) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               child: Center(
@@ -732,7 +717,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                         icon: const Icon(Icons.expand_more,
                                             size: 20),
                                         label: Text(
-                                            '加载更多（${d.posts.length}/${d.stream.length}）'),                                      ),
+                                            '加载更多（已显示 ${d.posts.length} / ${d.postsCount} 楼）'),                                      ),
                               ),
                             );
                           }
@@ -987,8 +972,33 @@ class _PostCard extends StatelessWidget {
             // 图片：点击进入全屏查看器（缩放 / 双击 / 多图翻页）
             customWidgetBuilder: (element) {
               if (element.classes.contains('poll') && post.polls.any((poll) =>
-                  poll.name == element.attributes['data-poll-name'])) {
+                  poll.name == (element.attributes['data-poll'] ?? element.attributes['data-poll-name']))) {
                 return const SizedBox.shrink();
+              }
+              // 视频在新版标记里是空的占位 div：YouTube 打开观看页，站内上传的视频到网页版观看。
+              if (element.classes.contains('video-embed')) {
+                final provider = element.attributes['data-provider'] ?? '';
+                final id = element.attributes['data-video-id'] ?? '';
+                final youtube = provider == 'youtube' && id.isNotEmpty;
+                final url = youtube
+                    ? 'https://www.youtube.com/watch?v=${Uri.encodeComponent(id)}'
+                    : '${AppState.baseUrl}/t/${detail.id}/${post.postNumber}';
+                return InkWell(
+                  onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.play_circle_outline),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(youtube ? 'YouTube 视频（点击观看）' : '视频（点击在网页版观看）')),
+                    ]),
+                  ),
+                );
               }
               if (element.localName != 'img') return null;
               final rawSrc = element.attributes['src'] ?? '';
@@ -1164,53 +1174,6 @@ class _PostCard extends StatelessWidget {
                         ? Icons.arrow_circle_down : Icons.arrow_circle_down_outlined),
                   ),
                 ],
-                // 表情反应区：单击 toggle 心、长按打开选择器
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onLike,
-                  onLongPress: onShowReactions,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          post.currentUserReaction != null
-                              ? reactionEmoji(post.currentUserReaction)
-                              : '❤',
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          post.reactionUsersCount > 0
-                              ? '${post.reactionUsersCount}'
-                              : '赞',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: post.currentUserReaction != null
-                                ? NL.love
-                                : muted,
-                            fontWeight: post.currentUserReaction != null
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // 小箭头点击展开表情选择器
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onShowReactions,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 6),
-                    child: Icon(Icons.expand_less,
-                        size: 16, color: muted),
-                  ),
-                ),
                 const SizedBox(width: 6),
                 TextButton.icon(
                   onPressed: onReply,

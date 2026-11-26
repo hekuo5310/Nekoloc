@@ -176,6 +176,9 @@ class Category {
   final bool isJoined;
   final String? description;
 
+  /// 谁能在这个节点发话题：anyone 所有人 / members 节点成员 / moderators 仅版主。
+  final String? topicPolicy;
+
   Category({
     required this.id,
     required this.name,
@@ -190,6 +193,7 @@ class Category {
     this.memberCount = 0,
     this.isJoined = false,
     this.description,
+    this.topicPolicy,
   });
 
   factory Category.fromJson(dynamic json) => Category(
@@ -206,6 +210,7 @@ class Category {
         memberCount: toInt(json['member_count']) ?? 0,
         isJoined: toBool(json['is_joined']),
         description: json['description']?.toString(),
+        topicPolicy: json['topic_policy']?.toString(),
       );
 
   static String _stripTags(String s) => s
@@ -441,6 +446,12 @@ class TopicDetail {
   final List<String> tags;
   final TopicRedEnvelope? redEnvelope;
 
+  /// 新版接口的楼层分页游标：继续加载楼层号大于它的回复；为 null 表示已经到底。
+  final int? nextAfter;
+
+  /// 当前用户能否回复（话题关闭或无权限时为 false）。
+  final bool canReply;
+
   TopicDetail({
     required this.id,
     required this.title,
@@ -457,7 +468,11 @@ class TopicDetail {
     required this.stream,
     this.tags = const [],
     this.redEnvelope,
+    this.nextAfter,
+    this.canReply = true,
   });
+
+  bool get hasMorePosts => nextAfter != null;
 
   factory TopicDetail.fromJson(dynamic json) {
     final ps = json['post_stream'] ?? const {};
@@ -578,6 +593,9 @@ class UserProfile {
   final List<String> ignoredUsernames;
   final bool canIgnoreUsers;
 
+  /// 我是否已屏蔽此用户（新版接口在资料里直接给出）。
+  final bool viewerBlocked;
+
   UserProfile({
     required this.username,
     this.name,
@@ -595,6 +613,7 @@ class UserProfile {
     this.totalFollowers,
     this.ignoredUsernames = const [],
     this.canIgnoreUsers = false,
+    this.viewerBlocked = false,
   });
 
   factory UserProfile.fromJson(dynamic json) => UserProfile(

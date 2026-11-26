@@ -79,8 +79,9 @@ Future<bool> showRewardDialog(BuildContext context, DiscourseApi api, Post post)
 Future<PostLottery?> showLotteryDialog(
   BuildContext context,
   DiscourseApi api,
-  PostLottery lottery,
-) async {
+  PostLottery lottery, {
+  int? postId,
+}) async {
   final qtyCtl = TextEditingController(text: '${lottery.minTicketsPerUser}');
   var random = false;
   String? error;
@@ -135,7 +136,7 @@ Future<PostLottery?> showLotteryDialog(
                       error = null;
                     });
                     try {
-                      final next = await api.participateInLottery(lottery.id, qty, random: random);
+                      final next = await api.participateInLottery(lottery.id, qty, random: random, postId: postId);
                       updated = next;
                       if (ctx.mounted) Navigator.pop(ctx);
                     } catch (e) {

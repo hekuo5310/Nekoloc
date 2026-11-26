@@ -73,7 +73,7 @@ void main() {
     expect(result.hasMore, isTrue);
     expect(SearchResult.fromJson({}).hasMore, isFalse);
     expect(buildSearchQuery('hello', titleOnly: true, username: 'alice', tag: 'flutter', order: 'latest'),
-      'hello in:title @alice tags:flutter order:latest');
+      'hello in:title @alice tag:flutter order:latest');
   });
 
   test('bookmark parsing retains the exact post and linked floor', () {

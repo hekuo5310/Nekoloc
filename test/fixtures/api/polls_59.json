@@ -1,0 +1,1 @@
+{"polls":[{"id":1,"post_id":59,"name":"poll","type":"multiple","min":1,"max":2,"results":"always","public":false,"close_at":null,"closed":false,"voters":0,"voted":false,"results_visible":true,"options":[{"id":1,"text":"选项一","votes":0,"chosen":false},{"id":2,"text":"选项二","votes":0,"chosen":false},{"id":3,"text":"选项三","votes":0,"chosen":false}]}]}

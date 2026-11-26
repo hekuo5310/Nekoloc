@@ -6,7 +6,7 @@ import '../account_models.dart';
 import '../api/friendly_error.dart';
 import '../app_state.dart';
 
-/// 我的徽章。徽章图标若是相对路径，按站点地址补全。
+/// 我的成就（旧版的徽章）。图标若是相对路径，按站点地址补全。
 class BadgesScreen extends StatefulWidget {
   const BadgesScreen({super.key});
 
@@ -58,7 +58,7 @@ class _BadgesScreenState extends State<BadgesScreen> {
     } else if (_badges == null) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_badges!.isEmpty) {
-      body = const Center(child: Text('还没有获得徽章'));
+      body = const Center(child: Text('还没有获得成就'));
     } else {
       final badges = _badges!;
       body = ListView.separated(
@@ -86,7 +86,7 @@ class _BadgesScreenState extends State<BadgesScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('我的徽章')),
+      appBar: AppBar(title: const Text('我的成就')),
       body: RefreshIndicator(onRefresh: _load, child: body),
     );
   }

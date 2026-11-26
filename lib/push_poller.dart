@@ -1,8 +1,6 @@
 import 'dart:io';
 
-import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/widgets.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -63,22 +61,12 @@ Future<List<NotificationItem>> runPushPoll(
   return plan.toAlert;
 }
 
-/// 后台 API 客户端：与 AppState 使用同一个 Cookie 目录和 User API Key，
+/// 后台 API 客户端：与 AppState 使用同一份本机保存的会话 token，
 /// 保证后台拉取的登录状态与前台一致。
-Future<DiscourseApi> backgroundApi(SharedPreferences prefs) async {
-  final dir = await getApplicationSupportDirectory();
-  final cookieDir = Directory('${dir.path}/cookies');
-  if (!cookieDir.existsSync()) cookieDir.createSync(recursive: true);
-  final jar = PersistCookieJar(
-    ignoreExpires: true,
-    storage: FileStorage(cookieDir.path),
-  );
-  return DiscourseApi(
-    base: 'https://www.nodeloc.com',
-    jar: jar,
-    userApiKey: prefs.getString('user_api_key'),
-  );
-}
+Future<DiscourseApi> backgroundApi(SharedPreferences prefs) async => DiscourseApi(
+      base: 'https://www.nodeloc.com',
+      token: prefs.getString('auth_token'),
+    );
 
 /// workmanager 的后台入口。必须是顶层函数，并带 vm:entry-point 标注。
 @pragma('vm:entry-point')
@@ -89,8 +77,7 @@ void pushBackgroundDispatcher() {
       final prefs = await SharedPreferences.getInstance();
       final api = await backgroundApi(prefs);
       // 未登录时直接结束，不改动任何状态。
-      final me = await api.currentUser();
-      if (me.username.isEmpty) return true;
+      if (!api.isLoggedIn) return true;
       final alerts = await runPushPoll(prefs, api);
       for (final n in alerts) {
         await SystemNotifier.show(n.id, pushAlertText(n));

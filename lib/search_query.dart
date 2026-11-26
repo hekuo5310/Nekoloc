@@ -7,7 +7,7 @@ String buildSearchQuery(String text, {bool titleOnly = false,
     terms.add('@${username.trim().replaceAll(RegExp(r"\s+"), "")}');
   }
   if (tag != null && tag.trim().isNotEmpty) {
-    terms.add('tags:${tag.trim().replaceAll(RegExp(r"\s+"), "")}');
+    terms.add('tag:${tag.trim().replaceAll(RegExp(r"\s+"), "")}');
   }
   if (order == 'latest' || order == 'likes') terms.add('order:$order');
   return terms.where((term) => term.isNotEmpty).join(' ');

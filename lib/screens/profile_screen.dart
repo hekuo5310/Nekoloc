@@ -188,7 +188,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _stat('帖子', '${p?.postCount ?? '-'}'),
-                        _stat('徽章', '${p?.badgeCount ?? '-'}'),
+                        _stat('成就', '${p?.badgeCount ?? '-'}'),
                         _stat('主题', '${p?.topicCount ?? '-'}'),
                         _stat('注册于', p?.createdAt != null ? fullDate(p!.createdAt) : '-'),
                       ],
@@ -225,7 +225,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   ListTile(
                     leading: const Icon(Icons.military_tech_outlined),
-                    title: const Text('我的徽章'),
+                    title: const Text('我的成就'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.push(
                       context,

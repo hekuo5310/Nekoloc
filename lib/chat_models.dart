@@ -22,11 +22,25 @@ class ChatChannel {
   final bool isDirect;
   final String? lastExcerpt;
 
+  /// 一对一私聊的对方用户名。新版站点的私聊按用户名寻址，而不是会话 id。
+  final String? directUsername;
+
+  /// 多人群聊（有成员列表，可以离开）。
+  final bool isGroup;
+  final int unreadCount;
+  final bool muted;
+  final DateTime? lastMessageAt;
+
   const ChatChannel({
     required this.id,
     required this.title,
     required this.isDirect,
     this.lastExcerpt,
+    this.directUsername,
+    this.isGroup = false,
+    this.unreadCount = 0,
+    this.muted = false,
+    this.lastMessageAt,
   });
 
   factory ChatChannel.fromJson(Map json) {
