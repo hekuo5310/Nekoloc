@@ -156,7 +156,10 @@ def patch_gradle_build(m, kts):
 
 
 def patch_android_gradle():
-    # 必须成功：缺了它安卓构建会失败，不能只打印 SKIP。
+    # 安卓构建里必须成功（缺了它构建会失败），不能只打印 SKIP；
+    # 其他平台的构建没有 android 目录，直接跳过。
+    if not os.path.isdir('android'):
+        return
     for p in ['android/app/build.gradle.kts', 'android/app/build.gradle']:
         m = read(p)
         if m is None:
