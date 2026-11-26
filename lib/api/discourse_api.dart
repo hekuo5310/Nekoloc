@@ -74,6 +74,7 @@ class DiscourseApi {
   List<Map>? _nodes;
   DateTime _nodesAt = DateTime.fromMillisecondsSinceEpoch(0);
   Map<String, Map>? _myNodes;
+  String? _nodesToken;
   final Map<String, String> _cursors = {};
   final Map<int, String> _directUsers = {};
   final Map<String, int> _pollIds = {};
@@ -368,10 +369,21 @@ class DiscourseApi {
     final d = await _get('/api/v1/me');
     final user = d['user'] is Map ? d['user'] as Map : const {};
     var unread = 0;
-    try {
-      unread = toInt((await _get('/api/v1/notifications', query: {'limit': 1}))['unread']) ?? 0;
-    } catch (_) {}
-    final me = currentUserFrom(user, unread: unread);
+    var unreadMessages = 0;
+    await Future.wait([
+      () async {
+        try {
+          unread = toInt((await _get('/api/v1/notifications', query: {'limit': 1}))['unread']) ?? 0;
+        } catch (_) {}
+      }(),
+      // 消息页角标：聊天的未读数。
+      () async {
+        try {
+          unreadMessages = toInt((await _get('/api/v1/chat'))['unread_count']) ?? 0;
+        } catch (_) {}
+      }(),
+    ]);
+    final me = currentUserFrom(user, unread: unread, unreadMessages: unreadMessages);
     _meId = me.id;
     _meName = me.username;
     return me;
@@ -410,7 +422,8 @@ class DiscourseApi {
   /// 节点目录：每 10 分钟刷新一次，登录后合并“已加入”状态。
   Future<List<Map>> _nodeDirectory({bool force = false}) async {
     final fresh = DateTime.now().difference(_nodesAt) < const Duration(minutes: 10);
-    if (!force && fresh && _nodes != null) return _nodes!;
+    // 换了账号（或登出）时，“已加入”状态属于上一个账号，必须重新取。
+    if (!force && fresh && _nodes != null && _nodesToken == token) return _nodes!;
     final d = await _get('/api/v1/nodes');
     final list = ((d['nodes'] as List?) ?? const []).whereType<Map>().map((e) => Map.from(e)).toList();
     if (token != null) {
@@ -427,6 +440,7 @@ class DiscourseApi {
     }
     _nodes = list;
     _nodesAt = DateTime.now();
+    _nodesToken = token;
     return list;
   }
 
@@ -604,29 +618,10 @@ class DiscourseApi {
     ]);
     posts = [
       for (final p in posts)
-        Post(
-          id: p.id,
-          postNumber: p.postNumber,
-          topicId: p.topicId,
-          username: p.username,
-          avatarTemplate: p.avatarTemplate,
-          cooked: p.cooked,
-          createdAt: p.createdAt,
-          likeCount: p.likeCount,
-          likedByMe: p.likedByMe,
-          canEdit: p.canEdit,
-          hidden: p.hidden,
-          replyToPostNumber: p.replyToPostNumber,
-          bookmarked: p.bookmarked,
-          bookmarkId: p.bookmarkId,
-          voteScore: p.voteScore,
-          voteDirection: p.voteDirection,
-          canVoteDown: p.canVoteDown,
-          polls: (pollsByPost[p.id] ?? const []).whereType<Map>().map(pollFrom).toList(),
-          pollsVotes: pollVotesFrom(pollsByPost[p.id] ?? const []),
-          lottery: p.id == firstId ? lottery : null,
-          redEnvelopeClaim: claims[p.id],
-        ),
+        _withExtras(p,
+            polls: pollsByPost[p.id] ?? const [],
+            lottery: p.id == firstId ? lottery : null,
+            redEnvelopeClaim: claims[p.id]),
     ];
     final topic = page['topic'] is Map ? page['topic'] as Map : const {};
     return topicDetailFrom(
@@ -641,6 +636,53 @@ class DiscourseApi {
   }
 
   static final _pollMarkup = RegExp(r'''class="[^"]*\bpoll\b''');
+
+  /// 给楼层补上投票、抽奖、红包领取记录；其余字段原样保留。
+  static Post _withExtras(Post p, {List polls = const [], PostLottery? lottery, RedEnvelopeClaim? redEnvelopeClaim}) =>
+      Post(
+        id: p.id,
+        postNumber: p.postNumber,
+        topicId: p.topicId,
+        username: p.username,
+        name: p.name,
+        avatarTemplate: p.avatarTemplate,
+        cooked: p.cooked,
+        createdAt: p.createdAt,
+        likeCount: p.likeCount,
+        likedByMe: p.likedByMe,
+        canEdit: p.canEdit,
+        canDelete: p.canDelete,
+        hidden: p.hidden,
+        replyToPostNumber: p.replyToPostNumber,
+        bookmarked: p.bookmarked,
+        bookmarkId: p.bookmarkId,
+        reactions: p.reactions,
+        currentUserReaction: p.currentUserReaction,
+        reactionUsersCount: p.reactionUsersCount,
+        voteScore: p.voteScore,
+        voteDirection: p.voteDirection,
+        canVoteDown: p.canVoteDown,
+        polls: polls.whereType<Map>().map(pollFrom).toList(),
+        pollsVotes: pollVotesFrom(polls),
+        rewards: p.rewards,
+        lottery: lottery ?? p.lottery,
+        redEnvelopeClaim: redEnvelopeClaim ?? p.redEnvelopeClaim,
+      );
+
+  /// 后续页里带投票的楼层，同样去取投票数据，否则界面没有投票按钮。
+  Future<List<Post>> _attachPolls(List<Post> posts) async {
+    final pollsByPost = <int, List>{};
+    await Future.wait([
+      for (final p in posts.where((p) => _pollMarkup.hasMatch(p.cooked)))
+        () async {
+          try {
+            pollsByPost[p.id] = await _pollsFor(p.id);
+          } catch (_) {}
+        }(),
+    ]);
+    if (pollsByPost.isEmpty) return posts;
+    return [for (final p in posts) pollsByPost.containsKey(p.id) ? _withExtras(p, polls: pollsByPost[p.id]!) : p];
+  }
 
   Future<List> _pollsFor(int postId) async {
     final polls = ((await _get('/api/v1/posts/$postId/polls'))['polls'] as List?) ?? const [];
@@ -657,10 +699,10 @@ class DiscourseApi {
     final page = await _get('/api/v1/topics/$topicId', query: {'limit': _page, 'after': after});
     final moderate = (page['permissions'] is Map) && (page['permissions'] as Map)['moderate'] == true;
     final raw = await _withVideos(((page['posts'] as List?) ?? const []).whereType<Map>().toList(), topicId);
-    final posts = raw
+    final posts = await _attachPolls(raw
         .where((p) => p['kind']?.toString() != 'action')
         .map((p) => postFrom(p, topicId: topicId, viewerId: _viewerId(), canModerate: moderate))
-        .toList();
+        .toList());
     return (posts: posts, nextAfter: toInt(page['next_after']));
   }
 

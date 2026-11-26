@@ -203,6 +203,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       final resp = await app.api.uploadImage(filePath: path, filename: file.name);
       final id = int.tryParse('${resp['id']}');
       if (id == null || id <= 0) throw ApiException('上传失败，请重试');
+      // 上传占用的忙碌标记先放开，否则 _send 会直接返回，图片发不出去。
+      if (mounted) setState(() => _sending = false);
       await _send(uploadIds: [id]);
     } catch (e) {
       if (mounted) setState(() => _sending = false);
@@ -361,7 +363,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             },
             itemBuilder: (_) => [
               if (!inThread && widget.channel.id > 0) const PopupMenuItem(value: 'level', child: Text('通知设置')),
-              if (!inThread && !widget.channel.isDirect) const PopupMenuItem(value: 'leave', child: Text('离开频道')),
+              if (!inThread && (!widget.channel.isDirect || widget.channel.isGroup))
+                PopupMenuItem(value: 'leave', child: Text(widget.channel.isGroup ? '退出群聊' : '离开频道')),
             ],
           ),
         ],

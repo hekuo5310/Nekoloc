@@ -111,7 +111,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
               trailing: IconButton(tooltip: '取消收藏', onPressed: _deleting.contains(b.id) ? null : () => _remove(b),
                 icon: const Icon(Icons.bookmark_remove_outlined)),
               onTap: b.topicId == null ? null : () async {
-                await Navigator.push(context, MaterialPageRoute(builder: (_) => TopicDetailScreen(topicId: b.topicId!, initialPostId: b.postId)));
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => TopicDetailScreen(topicId: b.topicId!, initialPostId: b.postId,
+                    initialPostNumber: (b.postNumber ?? 0) > 1 ? b.postNumber : null)));
                 if (mounted) _load();
               },
             );

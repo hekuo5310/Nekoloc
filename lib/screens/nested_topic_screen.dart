@@ -47,6 +47,8 @@ class _NestedTopicViewState extends State<NestedTopicView> {
   bool _busy = false;
   String? _error;
   final Set<int> _expanding = {};
+  /// 每个楼层下一次展开要取的页码（站点按游标翻页）。
+  final Map<int, int> _childPages = {};
 
   String get _slug => (widget.slug == null || widget.slug!.isEmpty) ? 'topic' : widget.slug!;
 
@@ -95,16 +97,21 @@ class _NestedTopicViewState extends State<NestedTopicView> {
     if (_expanding.contains(id)) return;
     setState(() => _expanding.add(id));
     try {
+      final page = _childPages[id] ?? 0;
       final r = await context.read<AppState>().api.nestedChildren(
             widget.topicId,
             node.post.postNumber,
             slug: _slug,
             sort: _sort,
+            page: page,
           );
       if (!mounted) return;
+      final seen = node.children.map((c) => c.post.id).toSet();
+      final fresh = r.children.map((m) => NestedNode.fromJson(m, depth: node.depth + 1)).where((c) => seen.add(c.post.id)).toList();
       setState(() {
-        node.children.addAll(r.children.map((m) => NestedNode.fromJson(m, depth: node.depth + 1)));
-        node.moreCount = (node.moreCount - r.children.length).clamp(0, 1 << 30);
+        _childPages[id] = page + 1;
+        node.children.addAll(fresh);
+        node.moreCount = r.hasMore ? (node.moreCount - fresh.length).clamp(1, 1 << 30) : 0;
       });
     } catch (e) {
       if (mounted) {
@@ -119,6 +126,7 @@ class _NestedTopicViewState extends State<NestedTopicView> {
 
   void _changeSort(String sort) {
     if (sort == _sort) return;
+    _childPages.clear();
     setState(() => _sort = sort);
     _loadRoots(reset: true);
   }

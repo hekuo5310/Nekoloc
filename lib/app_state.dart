@@ -153,6 +153,12 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (trust != null) await prefs.setString(kAuthTrustKey, trust);
   }
 
+  /// 接口已拿到新会话（例如注册后自动登录）：保存 token，再刷新账号。
+  Future<void> adoptSession() async {
+    await _saveSession();
+    await refreshUser();
+  }
+
   /// 静默刷新当前用户（不触发 UI loading）
   Future<void> refreshUser() async {
     try {

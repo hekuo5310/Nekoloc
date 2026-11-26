@@ -109,7 +109,8 @@ class _SignupScreenState extends State<SignupScreen> {
             // 个别节点加入失败不影响注册结果。
           }
         }
-        await app.refreshUser();
+        // 保存会话 token，否则重启应用后又是未登录。
+        await app.adoptSession();
         if (!mounted) return;
         Navigator.pop(context, true);
         return;

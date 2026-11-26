@@ -35,9 +35,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     }
     setState(() => _error = null);
     try {
-      final profile = await app.api.userProfile(me);
+      // 新版站点的屏蔽名单在 /me/blocks，个人资料里不再带。
+      final names = await app.api.blockedUsernames();
       if (!mounted) return;
-      setState(() => _names = [...profile.ignoredUsernames]);
+      setState(() => _names = [...names]);
     } catch (e) {
       if (mounted) setState(() => _error = friendlyError(e));
     }

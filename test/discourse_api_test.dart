@@ -139,6 +139,50 @@ void main() {
     expect(hits.where((h) => h.path == '/api/v1/videos/$sha'), hasLength(1));
   });
 
+  test('话题首页补投票时保留删除权限；后续页的投票同样取回', () async {
+    final poll = {'id': 11, 'name': 'poll', 'type': 'regular', 'options': [{'id': 1, 'text': '甲', 'votes': 0}]};
+    final (api, hits) = await fakeServer({
+      'GET /api/v1/nodes': (200, {'nodes': []}),
+      'GET /api/v1/topics/8': (200, {
+        'topic': {'id': 8, 'title': 't', 'reply_count': 1},
+        'posts': [
+          {'id': 1, 'post_number': 1, 'author': 'a', 'html': '<div class="poll" data-poll="poll"></div>', 'can_delete': true},
+          {'id': 2, 'post_number': 2, 'author': 'b', 'html': '<div class="poll" data-poll="poll"></div>'},
+        ],
+      }),
+      'GET /api/v1/posts/1/polls': (200, {'polls': [poll]}),
+      'GET /api/v1/posts/2/polls': (200, {'polls': [poll]}),
+    });
+    final d = await api.topic(8);
+    expect(d.posts.first.canDelete, isTrue);
+    expect(d.posts.first.polls, hasLength(1));
+    final later = await api.topicPostsAfter(8, 1);
+    expect(later.posts.firstWhere((p) => p.id == 2).polls, hasLength(1));
+    expect(hits.any((h) => h.path == '/api/v1/posts/2/polls'), isTrue);
+  });
+
+  test('节点目录缓存跟随账号：换 token 后重新取“已加入”', () async {
+    final (api, hits) = await fakeServer({
+      'GET /api/v1/nodes': (200, {'nodes': [{'id': 7, 'slug': 'vps', 'name': 'VPS'}]}),
+      'GET /api/v1/me/nodes': (200, {'joined': [{'slug': 'vps'}]}),
+    }, token: 'a');
+    await api.nodes();
+    api.token = 'b';
+    await api.nodes();
+    expect(hits.where((h) => h.path == '/api/v1/me/nodes'), hasLength(2));
+  });
+
+  test('当前用户带上聊天未读数，用于消息页角标', () async {
+    final (api, _) = await fakeServer({
+      'GET /api/v1/me': (200, {'user': {'id': 3, 'username': 'alice'}}),
+      'GET /api/v1/notifications': (200, {'notifications': [], 'unread': 1}),
+      'GET /api/v1/chat': (200, {'channels': [], 'directs': [], 'groups': [], 'unread_count': 5}),
+    }, token: 't');
+    final me = await api.currentUser();
+    expect(me.unreadPrivateMessages, 5);
+    expect(me.unreadNotifications, 1);
+  });
+
   test('投票：先取楼层的投票 id，再按选项 id 提交', () async {
     final poll = {
       'id': 11, 'post_id': 42, 'name': 'poll', 'type': 'multiple', 'closed': false,

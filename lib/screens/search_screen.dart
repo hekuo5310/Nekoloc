@@ -139,7 +139,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 subtitle: Text('${item.blurb}\n${item.username} · #${item.postNumber} · ${timeAgo(item.createdAt)}',
                   maxLines: 3, overflow: TextOverflow.ellipsis),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                  TopicDetailScreen(topicId: item.topicId, initialPostId: item.id > 0 ? item.id : null))),
+                  TopicDetailScreen(topicId: item.topicId, initialPostId: item.id > 0 ? item.id : null,
+                    initialPostNumber: item.postNumber > 1 ? item.postNumber : null))),
               );
             },
           )),

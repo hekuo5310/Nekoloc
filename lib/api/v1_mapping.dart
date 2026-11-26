@@ -378,12 +378,13 @@ NotificationItem notificationFrom(Map n) {
 
 // ---------------------------------------------------------------- 用户
 
-CurrentUser currentUserFrom(Map user, {int unread = 0}) => CurrentUser(
+CurrentUser currentUserFrom(Map user, {int unread = 0, int unreadMessages = 0}) => CurrentUser(
       id: _i(user['id']) ?? 0,
       username: _s(user['username']) ?? '',
       name: _s(user['name']),
       avatarTemplate: _s(user['avatar_url'] ?? user['avatar']),
       unreadNotifications: unread,
+      unreadPrivateMessages: unreadMessages,
       admin: _s(user['role']) == 'admin',
     );
 
