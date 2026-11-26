@@ -33,6 +33,13 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     _init();
   }
 
+  /// 测试用：直接使用给定的接口，不做初始化里的联网步骤。
+  @visibleForTesting
+  AppState.withApi(this.prefs, DiscourseApi api) {
+    _api = api;
+    initialized = true;
+  }
+
   /// 应用是否在前台。前台用应用内横幅提醒，后台用系统通知。
   bool _foreground = true;
 
