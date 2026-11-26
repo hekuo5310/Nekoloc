@@ -710,3 +710,47 @@ List<PostFlagReason> reportReasons() => [
 
 String reportReasonCodeFor(int id) =>
     id >= 1 && id <= reportReasonCodes.length ? reportReasonCodes[id - 1] : 'other';
+
+// ---------------------------------------------------------------- 视频
+
+/// 站内上传的视频在帖子里只是一个占位 div，只带视频的 SHA1：
+/// `<div class="video-embed" data-provider="upload" data-video-id="<sha1>"></div>`。
+final _uploadVideoDiv = RegExp(r'<div\b[^>]*\bclass="[^"]*\bvideo-embed\b[^"]*"[^>]*>\s*</div>', caseSensitive: false);
+final _htmlAttr = RegExp(r'([\w-]+)\s*=\s*"([^"]*)"');
+final _sha1Pattern = RegExp(r'^[0-9a-f]{40}$');
+
+String? _uploadSha1(String div) {
+  final attrs = {for (final m in _htmlAttr.allMatches(div)) m.group(1)!.toLowerCase(): m.group(2)!};
+  final id = (attrs['data-video-id'] ?? '').toLowerCase();
+  return attrs['data-provider'] == 'upload' && _sha1Pattern.hasMatch(id) ? id : null;
+}
+
+/// 帖子里站内上传视频的 SHA1（去重）。
+Set<String> uploadVideoIds(String html) =>
+    _uploadVideoDiv.allMatches(html).map((m) => _uploadSha1(m.group(0)!)).whereType<String>().toSet();
+
+/// `GET /videos/{sha1}` 的结果里能播放的部分；没转码完（status 不是 ready）时为 null。
+({String hls, String? poster, int? width, int? height})? playableVideoFrom(Map? video) {
+  if (video == null) return null;
+  final status = _s(video['status']);
+  final hls = _s(video['hls_url']);
+  if (hls == null || (status != null && status != 'ready')) return null;
+  return (hls: hls, poster: _s(video['poster_url']), width: _i(video['width']), height: _i(video['height']));
+}
+
+String _escAttr(String v) =>
+    v.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+/// 把已转码好的上传视频换成 `<video>`，阅读页的 HTML 渲染器会在安卓、iOS、macOS 上直接播放；
+/// 其他平台显示里面的链接，去网页版观看。没转码完的保留原样（界面显示占位卡片）。
+String rewriteUploadVideos(String html, Map<String, Map?> videos, {required String fallbackUrl}) =>
+    html.replaceAllMapped(_uploadVideoDiv, (m) {
+      final sha1 = _uploadSha1(m.group(0)!);
+      final v = sha1 == null ? null : playableVideoFrom(videos[sha1]);
+      if (v == null) return m.group(0)!;
+      final w = v.width, h = v.height;
+      final dims = w != null && h != null && w > 0 && h > 0 ? ' width="$w" height="$h"' : '';
+      final poster = v.poster == null ? '' : ' poster="${_escAttr(v.poster!)}"';
+      return '<video controls src="${_escAttr(v.hls)}"$poster$dims>'
+          '<a href="${_escAttr(fallbackUrl)}">视频（点击在网页版观看）</a></video>';
+    });

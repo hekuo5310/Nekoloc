@@ -276,4 +276,27 @@ void main() {
     expect(reasons.last.requireMessage, isTrue);
     expect(reportReasonCodeFor(99), 'other');
   });
+
+  test('站内视频：转码好的换成 <video>（HLS、封面、尺寸），没转码完的保持占位', () {
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    const other = 'ffffffffffffffffffffffffffffffffffffffff';
+    const html = '<p>看</p><div class="video-embed" data-provider="upload" data-video-id="$sha"></div>'
+        '<div class="video-embed" data-provider="upload" data-video-id="$other"></div>'
+        '<div class="video-embed" data-provider="youtube" data-video-id="abc"></div>';
+    expect(uploadVideoIds(html), {sha, other});
+    final out = rewriteUploadVideos(html, {
+      sha: {
+        'sha1': sha, 'status': 'ready', 'hls_url': 'https://v.example/a.m3u8?x=1&y=2',
+        'poster_url': 'https://v.example/p.jpg', 'width': 1280, 'height': 720,
+      },
+      other: {'sha1': other, 'status': 'processing'},
+    }, fallbackUrl: 'https://www.nodeloc.com/t/9/3');
+    expect(out, contains('<video controls src="https://v.example/a.m3u8?x=1&amp;y=2" '
+        'poster="https://v.example/p.jpg" width="1280" height="720">'));
+    expect(out, contains('<a href="https://www.nodeloc.com/t/9/3">'));
+    expect(out, contains('data-video-id="$other"'));
+    expect(out, contains('data-provider="youtube"'));
+    expect(playableVideoFrom({'hls_url': 'h'}), isNotNull);
+    expect(playableVideoFrom({'status': 'failed', 'hls_url': 'h'}), isNull);
+  });
 }

@@ -567,6 +567,7 @@ class DiscourseApi {
         }
       } catch (_) {}
     }
+    rawPosts = await _withVideos(rawPosts, id);
     var posts = rawPosts
         .where((p) => p['kind']?.toString() != 'action')
         .map((p) => postFrom(p, topicId: id, viewerId: _viewerId(), canModerate: moderate))
@@ -655,12 +656,37 @@ class DiscourseApi {
   Future<({List<Post> posts, int? nextAfter})> topicPostsAfter(int topicId, int after) async {
     final page = await _get('/api/v1/topics/$topicId', query: {'limit': _page, 'after': after});
     final moderate = (page['permissions'] is Map) && (page['permissions'] as Map)['moderate'] == true;
-    final posts = ((page['posts'] as List?) ?? const [])
-        .whereType<Map>()
+    final raw = await _withVideos(((page['posts'] as List?) ?? const []).whereType<Map>().toList(), topicId);
+    final posts = raw
         .where((p) => p['kind']?.toString() != 'action')
         .map((p) => postFrom(p, topicId: topicId, viewerId: _viewerId(), canModerate: moderate))
         .toList();
     return (posts: posts, nextAfter: toInt(page['next_after']));
+  }
+
+  /// 已转码好、可以播放的视频；转码中的不记，下次打开时再查。
+  final Map<String, Map?> _videos = {};
+
+  /// 站内上传的视频只给 SHA1，播放地址（HLS）要按 SHA1 另外查；查不到的保持占位。
+  Future<List<Map>> _withVideos(List<Map> posts, int topicId) async {
+    final ids = {for (final p in posts) ...uploadVideoIds(p['html']?.toString() ?? '')};
+    if (ids.isEmpty) return posts;
+    await Future.wait(ids.where((id) => _videos[id] == null).map((id) async {
+      try {
+        final v = (await _get('/api/v1/videos/$id'))['video'];
+        if (v is Map && playableVideoFrom(v) != null) _videos[id] = v;
+      } catch (_) {}
+    }));
+    return [
+      for (final p in posts)
+        uploadVideoIds(p['html']?.toString() ?? '').isEmpty
+            ? p
+            : {
+                ...p,
+                'html': rewriteUploadVideos(p['html'].toString(), _videos,
+                    fallbackUrl: '$base/t/$topicId/${p['post_number'] ?? 1}'),
+              },
+    ];
   }
 
   /// 按帖子 id 取楼层（收藏、通知跳转用）。新接口没有按 id 取帖子的路径，取前 100 楼过滤。

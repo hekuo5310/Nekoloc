@@ -117,6 +117,28 @@ void main() {
     await expectLater(api.topic(3, postNumber: 0), throwsArgumentError);
   });
 
+  test('站内上传的视频：按 SHA1 查到 HLS 地址后换成可播放的 <video>', () async {
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    final (api, hits) = await fakeServer({
+      'GET /api/v1/nodes': (200, {'nodes': []}),
+      'GET /api/v1/topics/5': (200, {
+        'topic': {'id': 5, 'title': '视频', 'reply_count': 0},
+        'posts': [
+          {'id': 1, 'post_number': 1, 'author': 'a', 'html': '<div class="video-embed" data-provider="upload" data-video-id="$sha"></div>'},
+        ],
+      }),
+      'GET /api/v1/videos/$sha': (200, {
+        'video': {'sha1': sha, 'status': 'ready', 'hls_url': 'https://cdn.example/v/$sha.m3u8', 'poster_url': 'https://cdn.example/p.jpg'},
+      }),
+    });
+    final d = await api.topic(5);
+    expect(d.posts.single.cooked, contains('<video controls src="https://cdn.example/v/$sha.m3u8"'));
+    expect(hits.where((h) => h.path == '/api/v1/videos/$sha'), hasLength(1));
+    // 已查到的视频不再重复请求。
+    await api.topic(5);
+    expect(hits.where((h) => h.path == '/api/v1/videos/$sha'), hasLength(1));
+  });
+
   test('投票：先取楼层的投票 id，再按选项 id 提交', () async {
     final poll = {
       'id': 11, 'post_id': 42, 'name': 'poll', 'type': 'multiple', 'closed': false,
