@@ -347,6 +347,11 @@ int notificationTypeOf(String kind, {int actorCount = 1}) => switch (kind) {
       _ => 0,
     };
 
+int? _topicIdFromPath(String? path) {
+  final m = RegExp(r'^/t/(?:[^/]+/)?(\d+)').firstMatch(path ?? '');
+  return m == null ? null : int.tryParse(m.group(1)!);
+}
+
 NotificationItem notificationFrom(Map n) {
   final data = _m(n['data']);
   final kind = _s(n['kind']) ?? '';
@@ -359,7 +364,8 @@ NotificationItem notificationFrom(Map n) {
     read: _b(n['read']),
     createdAt: toDate(n['created_at']),
     postNumber: _i(n['post_number']),
-    topicId: _i(n['topic_id']),
+    // 系统通知不带 topic_id，链接只在 data.path（如 /t/119445）里。
+    topicId: _i(n['topic_id']) ?? _topicIdFromPath(_s(data['path'])),
     topicTitle: title,
     displayUsername: _s(n['actor']) ?? '',
   );
@@ -530,12 +536,35 @@ List<AssociatedAccount> associatedAccountsFrom(Map json) => [
           ),
     ];
 
+/// 把登录记录里的 User-Agent 读成「浏览器 · 系统」，认不出时退回原文。
+String describeUserAgent(String? ua) {
+  if (ua == null || ua.trim().isEmpty) return '未知设备';
+  String? pick(List<(String, String)> rules) {
+    for (final (needle, name) in rules) {
+      if (ua.contains(needle)) return name;
+    }
+    return null;
+  }
+  final client = pick(const [
+    ('Nekoloc/', 'Nekoloc'), ('NodeLoc/', 'NodeLoc 客户端'), ('okhttp', 'NodeLoc 客户端'),
+    ('Edg/', 'Edge'), ('OPR/', 'Opera'), ('Firefox/', 'Firefox'), ('Chrome/', 'Chrome'),
+    ('Safari/', 'Safari'),
+  ]);
+  final os = pick(const [
+    ('Android', 'Android'), ('iPhone', 'iPhone'), ('iPad', 'iPad'), ('Windows', 'Windows'),
+    ('Mac OS X', 'macOS'), ('Macintosh', 'macOS'), ('CrOS', 'ChromeOS'), ('Linux', 'Linux'),
+  ]);
+  final parts = [client, os].whereType<String>().toList();
+  return parts.isEmpty ? ua : parts.join(' · ');
+}
+
 List<AuthSession> sessionsFrom(Map json) => [
       for (final raw in _l(json['sessions']))
         AuthSession(
           id: _i(_m(raw)['id']) ?? 0,
-          deviceName: _s(_m(raw)['user_agent']) ?? '未知设备',
-          osName: _s(_m(raw)['ip']),
+          deviceName: describeUserAgent(_s(_m(raw)['user_agent'])) +
+              (_b(_m(raw)['current']) ? '（本机）' : ''),
+          osName: _s(_m(raw)['ip']) == null ? null : 'IP ${_s(_m(raw)['ip'])}',
           seenAt: toDate(_m(raw)['last_seen_at']),
           isActive: _b(_m(raw)['current']),
         ),

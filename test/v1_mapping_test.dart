@@ -231,8 +231,33 @@ void main() {
     expect(upgradeProgressFrom({'tier': 5}).maxLevelReached, isTrue);
   });
 
+  test('系统通知没有 topic_id 时从 data.path 取话题', () {
+    final n = notificationFrom({
+      'id': 1, 'kind': 'system', 'read': false,
+      'data': {'title': 'App 已适配', 'path': '/t/119445'},
+    });
+    expect(n.topicId, 119445);
+    expect(n.topicTitle, 'App 已适配');
+    expect(notificationFrom({'id': 2, 'kind': 'system', 'data': {'path': '/u/bob'}}).topicId, isNull);
+  });
+
+  test('登录设备：User-Agent 读成浏览器与系统，IP 单独列出', () {
+    final s = sessionsFrom({
+      'sessions': [
+        {'id': 1, 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:160.0) Gecko/20100101 Firefox/160.0', 'ip': '1.2.3.4', 'current': true},
+        {'id': 2, 'user_agent': 'Nekoloc/2.0.0 (Flutter; android; +https://github.com/hekuo5310/Nekoloc)'},
+      ],
+    });
+    expect(s.first.deviceName, 'Firefox · Windows（本机）');
+    expect(s.first.osName, 'IP 1.2.3.4');
+    expect(s.last.deviceName, 'Nekoloc');
+    expect(describeUserAgent('Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36'), 'Chrome · Android');
+    expect(describeUserAgent('curl/8'), 'curl/8');
+  });
+
   test('屏蔽名单：宽松读取几种可能的结构', () {
     expect(blockedUsernamesFrom({'users': [{'username': 'bob'}]}), ['bob']);
+    expect(blockedUsernamesFrom({'users': [{'username': 'pencilnav', 'avatar': null, 'since': '2026-01-01', 'name': ''}]}), ['pencilnav']);
     expect(blockedUsernamesFrom({'blocks': ['carol']}), ['carol']);
     expect(blockedUsernamesFrom([{'username': 'dave'}]), ['dave']);
     expect(blockedUsernamesFrom({}), isEmpty);

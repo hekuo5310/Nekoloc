@@ -49,3 +49,13 @@
 - **视频剪辑与封面**：参考项目支持视频裁剪和封面选取，需要平台原生媒体管线。本客户端目前没有视频上传流程。
 - **iOS 后台推送**：需要 BGTaskScheduler 注册与 Info.plist 配置。当前只在 Android 上做后台定时拉取，iOS 仅在应用运行时提醒。
 - **桌面后台推送**：Windows、macOS、Linux 没有对应的后台任务机制，仅在应用运行时提醒。
+
+## 登录状态下的线上核对（2026-11-26）
+
+用真实账号对以下只读接口逐一取了线上响应，再交给客户端自己的解析代码比对：
+
+- `/me`、`/notifications`、`/me/blocks`（结构为 `{users:[{username,…}]}`）、`/me/settings`、`/chat`、私聊与群聊消息、群成员、`/checkin`、`/points`、`/points/history`、`/me/reputation`、`/me/sessions`、`/me/identities`、`/saved`、登录状态下的话题详情（`permissions`、`viewer_vote`、`viewer_bookmarked`）——字段与解析一致。
+- 据此修正两处：系统通知没有 `topic_id`，改从 `data.path`（如 `/t/119445`）取话题，点击才能打开；登录设备列表原来把整串 User-Agent 当设备名、IP 当系统名，改为显示「浏览器 · 系统（本机）」与「IP …」。
+- 搜索：线上只有 `sort=new` 与 `node=` 会改变结果，`@用户`、`in:title`、`order:`、`tag:` 都只按普通文字匹配，相应筛选已移除，标签改走 `/topics?tag=`。
+
+未核对：发帖、回复、投票、签到等写操作（会改动真实账号数据，没有执行），以及真机上的视频播放与界面表现。
