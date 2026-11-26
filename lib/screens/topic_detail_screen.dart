@@ -1061,14 +1061,18 @@ class _PostCard extends StatelessWidget {
                   poll.name == (element.attributes['data-poll'] ?? element.attributes['data-poll-name']))) {
                 return const SizedBox.shrink();
               }
-              // 视频在新版标记里是空的占位 div：YouTube 打开观看页，站内上传的视频到网页版观看。
+              // 视频在新版标记里是空的占位 div：YouTube、哔哩哔哩打开观看页；站内上传的视频
+              // 转码好时已在接口层换成可播放的 <video>，走到这里的是还在转码的，到网页版观看。
               if (element.classes.contains('video-embed')) {
                 final provider = element.attributes['data-provider'] ?? '';
                 final id = element.attributes['data-video-id'] ?? '';
                 final youtube = provider == 'youtube' && id.isNotEmpty;
+                final bilibili = provider == 'bilibili' && id.isNotEmpty;
                 final url = youtube
                     ? 'https://www.youtube.com/watch?v=${Uri.encodeComponent(id)}'
-                    : '${AppState.baseUrl}/t/${detail.id}/${post.postNumber}';
+                    : bilibili
+                        ? 'https://www.bilibili.com/video/${Uri.encodeComponent(id)}'
+                        : '${AppState.baseUrl}/t/${detail.id}/${post.postNumber}';
                 return InkWell(
                   onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
                   child: Container(
@@ -1081,7 +1085,11 @@ class _PostCard extends StatelessWidget {
                     child: Row(children: [
                       const Icon(Icons.play_circle_outline),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(youtube ? 'YouTube 视频（点击观看）' : '视频（点击在网页版观看）')),
+                      Expanded(child: Text(youtube
+                          ? 'YouTube 视频（点击观看）'
+                          : bilibili
+                              ? '哔哩哔哩视频（点击观看）'
+                              : '视频（点击在网页版观看）')),
                     ]),
                   ),
                 );
