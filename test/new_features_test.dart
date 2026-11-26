@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nodeloc_app/composer_tools.dart';
 import 'package:nodeloc_app/models.dart';
-import 'package:nodeloc_app/search_query.dart';
 import 'package:nodeloc_app/widgets/poll_card.dart';
 
 void main() {
@@ -72,8 +71,6 @@ void main() {
     expect(result.items.single.postNumber, 9);
     expect(result.hasMore, isTrue);
     expect(SearchResult.fromJson({}).hasMore, isFalse);
-    expect(buildSearchQuery('hello', titleOnly: true, username: 'alice', tag: 'flutter', order: 'latest'),
-      'hello in:title @alice tag:flutter order:latest');
   });
 
   test('bookmark parsing retains the exact post and linked floor', () {

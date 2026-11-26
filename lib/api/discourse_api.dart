@@ -788,9 +788,11 @@ class DiscourseApi {
   // ---------------------------------------------------------------- 搜索
 
   /// 页码从 1 开始。
-  Future<SearchResult> search(String q, {int page = 1}) async {
+  /// [newest] 为真时按发布时间倒序（站点的 `sort=new`），否则按相关程度。
+  Future<SearchResult> search(String q, {int page = 1, bool newest = false}) async {
     final d = await _get('/api/v1/search', query: {
       'q': q,
+      if (newest) 'sort': 'new',
       'offset': (page - 1).clamp(0, 1 << 20) * _page,
       'limit': _page,
     });

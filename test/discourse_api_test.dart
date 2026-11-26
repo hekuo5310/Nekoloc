@@ -197,6 +197,17 @@ void main() {
     expect(body['title'], '标题');
   });
 
+  test('搜索：按最新排序时带 sort=new，翻页用偏移', () async {
+    final (api, hits) = await fakeServer({
+      'GET /api/v1/search': (200, {'topics': [], 'posts': [], 'has_more': false}),
+    });
+    await api.search('vps');
+    expect(hits.last.query.containsKey('sort'), isFalse);
+    await api.search('vps', page: 2, newest: true);
+    expect(hits.last.query['sort'], 'new');
+    expect(hits.last.query['offset'], isNot('0'));
+  });
+
   test('列表用游标分页：第二页带上第一页给出的游标', () async {
     final (api, hits) = await fakeServer({
       'GET /api/v1/nodes': (200, {'nodes': []}),
