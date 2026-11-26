@@ -11,6 +11,7 @@ Nekoloc（前身 NodeLoc APP）—— [NodeLoc](https://www.nodeloc.com) 第三�
 ### 修复
 - **登录提示“已取消人机验证”**：在电脑版（Windows、macOS、Linux）上应用内显示不了验证组件，以前直接报“已取消人机验证”，现在会自动转到浏览器登录，在站点页面里完成验证
 - 手机上关掉验证窗口时，错误提示下面提供“改用浏览器登录”；验证组件 15 秒还没加载出来时，窗口里给出同样的提示
+- Google Play 发布流程改用 Java 21：2.0.0 的 Play 上架因 Android lint 在 Java 17 上崩溃而失败
 
 ---
 

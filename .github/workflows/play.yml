@@ -75,10 +75,12 @@ jobs:
               except (ValueError, KeyError, AssertionError, TypeError):
                   raise SystemExit('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON must contain a service account key JSON')
           PY
+      # 新版 Android lint 用到 Java 21 的 API（List.removeLast），17 上会在
+      # lintVitalRelease 里崩溃；与“Build Apps”安卓构建使用的 runner 默认 JDK 保持一致。
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
