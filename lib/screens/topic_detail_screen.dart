@@ -546,6 +546,37 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _deletePost(Post post) async {
+    final whole = post.postNumber == 1;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(whole ? '删除话题' : '删除帖子'),
+        content: Text(whole ? '删除一楼会删除整个话题，确定吗？' : '确定删除 #${post.postNumber} 吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await context.read<AppState>().api.deletePost(post.id);
+      if (!mounted) return;
+      if (whole) {
+        Navigator.pop(context);
+        return;
+      }
+      final d = _detail;
+      if (d != null) {
+        setState(() => _detail = _copyWithPosts(d, d.posts.where((p) => p.id != post.id).toList()));
+      }
+      _hint('已删除');
+    } catch (e) {
+      _hint('删除失败：${friendlyError(e)}');
+    }
+  }
+
   Future<void> _editPost(Post post) async {
     final app = context.read<AppState>();
     try {
@@ -612,6 +643,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       hint: '回复 #${post.postNumber} ${post.username}'),
     onCopyLink: () => _copyLink(post.postNumber),
     onChanged: _load, onEdit: post.canEdit ? () => _editPost(post) : null,
+    onDelete: post.canDelete ? () => _deletePost(post) : null,
     onReport: () => _reportPost(post),
     onVote: (direction) => _vote(post, direction),
     voting: _votingPostId == post.id,
@@ -953,6 +985,7 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onCopyLink;
   final VoidCallback onChanged;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final VoidCallback onReport;
   final ValueChanged<String> onVote;
   final bool voting;
@@ -976,6 +1009,7 @@ class _PostCard extends StatelessWidget {
     required this.onCopyLink,
     required this.onChanged,
     this.onEdit,
+    this.onDelete,
     required this.onReport,
     required this.onVote,
     required this.voting,
@@ -1173,6 +1207,7 @@ class _PostCard extends StatelessWidget {
                   onSelected: (v) {
                     if (v == 'copy') onCopyLink();
                     if (v == 'edit') onEdit?.call();
+                    if (v == 'delete') onDelete?.call();
                     if (v == 'source') onSource?.call();
                     if (v == 'report') onReport();
                     if (v == 'bookmark') onBookmark();
@@ -1183,6 +1218,8 @@ class _PostCard extends StatelessWidget {
                       child: Text(post.bookmarked ? '取消收藏此楼层' : '收藏此楼层')),
                     if (onEdit != null)
                       const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
+                    if (onDelete != null)
+                      const PopupMenuItem(value: 'delete', child: Text('删除帖子')),
                     const PopupMenuItem(value: 'source', child: Text('查看源码')),
                     const PopupMenuItem(value: 'report', child: Text('举报帖子')),
                   ],

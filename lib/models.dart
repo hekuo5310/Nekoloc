@@ -269,6 +269,7 @@ class Post {
   final int likeCount;
   final bool likedByMe;
   final bool canEdit;
+  final bool canDelete;
   final bool hidden;
   final int? replyToPostNumber;
   final bool bookmarked;
@@ -297,6 +298,7 @@ class Post {
     required this.likeCount,
     this.likedByMe = false,
     this.canEdit = false,
+    this.canDelete = false,
     this.hidden = false,
     this.replyToPostNumber,
     this.bookmarked = false,
@@ -335,6 +337,7 @@ class Post {
       likeCount: likeCount,
       likedByMe: liked,
       canEdit: toBool(json['can_edit']),
+      canDelete: toBool(json['can_delete']),
       hidden: toBool(json['hidden']),
       replyToPostNumber: toInt(json['reply_to_post_number']),
       bookmarked: toBool(json['bookmarked']),
@@ -391,6 +394,7 @@ class Post {
         likeCount: likeCount ?? this.likeCount,
         likedByMe: likedByMe ?? this.likedByMe,
         canEdit: canEdit,
+        canDelete: canDelete,
         hidden: hidden,
         replyToPostNumber: replyToPostNumber,
         bookmarked: bookmarked ?? this.bookmarked,

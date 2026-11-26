@@ -742,6 +742,9 @@ class DiscourseApi {
 
   // ---------------------------------------------------------------- 点赞（即赞成票）
 
+  /// 删除帖子（自己的，或有管理权限时）。删除一楼即删除整个话题。
+  Future<void> deletePost(int postId) => _send('DELETE', '/api/v1/posts/$postId').then((_) {});
+
   Future<void> likePost(int postId) => castPostVote(postId, 'up').then((_) {});
 
   Future<void> unlikePost(int postId) => castPostVote(postId, 'none').then((_) {});

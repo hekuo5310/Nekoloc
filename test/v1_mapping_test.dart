@@ -58,8 +58,14 @@ void main() {
     expect(post.hidden, isTrue);
     expect(post.voteScore, 2);
     expect(post.voteDirection, 'down');
-    // 自己的帖子被删除后不能再编辑。
+    // 自己的帖子被删除后不能再编辑或删除。
     expect(post.canEdit, isFalse);
+    expect(post.canDelete, isFalse);
+    expect(postFrom({'id': 1, 'post_number': 3, 'author': 'bob', 'can_delete': true}, viewerId: 9).canDelete, isTrue);
+    // 自己的回复即使站点给 can_delete=false 也能删；一楼不能。
+    expect(postFrom({'id': 2, 'post_number': 3, 'author': 'bob', 'author_id': 4, 'can_delete': false}, viewerId: 4).canDelete, isTrue);
+    expect(postFrom({'id': 3, 'post_number': 1, 'author': 'bob', 'author_id': 4, 'can_delete': false}, viewerId: 4).canDelete, isFalse);
+    expect(postFrom({'id': 4, 'post_number': 3, 'author': 'carol', 'author_id': 5, 'can_delete': false}, viewerId: 4).canDelete, isFalse);
   });
 
   test('嵌套视图：按 depth 还原楼中楼', () {

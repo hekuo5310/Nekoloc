@@ -129,6 +129,11 @@ Post postFrom(Map p, {int? topicId, int? viewerId, bool canModerate = false}) {
     likeCount: up,
     likedByMe: viewerVote > 0,
     canEdit: p['can_edit'] is bool ? p['can_edit'] as bool : ((yours || canModerate) && !deleted),
+    // 线上实测：自己刚发的回复 can_delete 为 false，删除请求却能成功；
+    // 所以自己的回复（一楼除外）总是允许删除，其余以站点给出的为准。
+    canDelete: !deleted &&
+        ((p['can_delete'] is bool && p['can_delete'] as bool) ||
+            ((yours || (canModerate && p['can_delete'] is! bool)) && (_i(p['post_number']) ?? 1) > 1)),
     hidden: _b(p['hidden']) || deleted,
     replyToPostNumber: _i(p['reply_to_post_number']),
     bookmarked: bookmarked,
