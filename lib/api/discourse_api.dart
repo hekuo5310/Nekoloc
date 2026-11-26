@@ -42,8 +42,12 @@ class UnsupportedFeatureException extends ApiException {
 }
 
 /// 需要人机验证，但当前平台无法显示验证组件（或用户关闭了它）。
+/// 需要人机验证但没拿到 token。[cancelled] 为真表示用户自己关掉了验证窗口；
+/// 否则是这台设备显示不了验证组件，应改用浏览器登录（站点页面里有验证）。
 class CaptchaUnavailableException extends ApiException {
-  CaptchaUnavailableException(String message) : super(message, null, 'captcha_unavailable');
+  final bool cancelled;
+  CaptchaUnavailableException(String message, {this.cancelled = false})
+      : super(message, null, cancelled ? 'captcha_cancelled' : 'captcha_unavailable');
 }
 
 /// NodeLoc 站点客户端（新版自建后端 `/api/v1`）。
@@ -53,7 +57,7 @@ class CaptchaUnavailableException extends ApiException {
 /// 映射回界面使用的模型，所以界面基本不用改。鉴权是 Bearer token（登录、注册、
 /// 浏览器授权交换得到），错误统一为 `{"error":{"code","message","fields"}}`。
 class DiscourseApi {
-  static const String appVersion = '2.0.0';
+  static const String appVersion = '2.0.1';
 
   final String base;
   final Dio _dio;
@@ -283,7 +287,10 @@ class DiscourseApi {
       throw CaptchaUnavailableException('需要完成人机验证，当前设备无法显示验证组件，请使用“浏览器登录”');
     }
     final token = await solver(config, action);
-    if (token == null || token.isEmpty) throw CaptchaUnavailableException('已取消人机验证');
+    if (token == null) {
+      throw CaptchaUnavailableException('需要完成人机验证，当前设备无法显示验证组件，请使用“浏览器登录”');
+    }
+    if (token.isEmpty) throw CaptchaUnavailableException('已取消人机验证', cancelled: true);
     return token;
   }
 

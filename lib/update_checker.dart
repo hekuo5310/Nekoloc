@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'update_source.dart';
 
 /// 应用当前版本（与 pubspec version 保持一致；发版时同步修改）
-const String kAppVersion = '2.0.0';
+const String kAppVersion = '2.0.1';
 
 class UpdateInfo {
   final String version;

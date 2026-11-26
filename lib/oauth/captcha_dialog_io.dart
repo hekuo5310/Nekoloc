@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,11 +11,13 @@ Future<String?> solveCaptcha(CaptchaConfig config, String action) async {
   if (!(Platform.isAndroid || Platform.isIOS)) return null;
   final context = appNavigatorKey.currentContext;
   if (context == null || !context.mounted) return null;
-  return showDialog<String>(
+  final token = await showDialog<String>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _CaptchaDialog(config: config),
   );
+  // 关掉窗口（含系统返回键）算作用户取消，与“显示不了”区分开。
+  return token ?? '';
 }
 
 class _CaptchaDialog extends StatefulWidget {
@@ -30,10 +33,17 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
   bool _ready = false;
   String? _error;
   bool _done = false;
+  Timer? _slow;
 
   @override
   void initState() {
     super.initState();
+    // 验证组件来自第三方脚本，网络不通时会一直空白：给出可以继续的提示。
+    _slow = Timer(const Duration(seconds: 15), () {
+      if (mounted && !_ready && _error == null) {
+        setState(() => _error = '验证组件加载超时。可以取消后改用“浏览器登录”，在站点页面里完成验证。');
+      }
+    });
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.transparent)
@@ -45,6 +55,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         if (!mounted) return;
         switch (kind) {
           case 'ready':
+            _slow?.cancel();
             setState(() => _ready = true);
           case 'token':
             if (_done || value.isEmpty) return;
@@ -56,6 +67,12 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
       })
       // hCaptcha 按页面域名校验站点密钥，所以页面必须以站点地址为基础加载。
       ..loadHtmlString(captchaPage(widget.config), baseUrl: '${AppState.baseUrl}/');
+  }
+
+  @override
+  void dispose() {
+    _slow?.cancel();
+    super.dispose();
   }
 
   @override
@@ -79,7 +96,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.of(context).pop(''), child: const Text('取消')),
       ],
     );
   }

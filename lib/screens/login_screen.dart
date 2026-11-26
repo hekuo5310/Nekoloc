@@ -23,6 +23,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showTotp = false;
   bool _busy = false;
   String? _error;
+  /// 人机验证没完成：在错误提示下给出“改用浏览器登录”。
+  bool _offerBrowser = false;
 
   @override
   void dispose() {
@@ -42,6 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _offerBrowser = false;
     });
     final app = context.read<AppState>();
     try {
@@ -51,6 +54,15 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(content: Text('欢迎回来，${app.user?.username ?? ''}')),
         );
       }
+    } on CaptchaUnavailableException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _offerBrowser = true;
+        _error = e.cancelled ? '已取消人机验证。也可以改用浏览器登录，在站点页面里完成验证。' : e.message;
+      });
+      // 这台设备显示不了验证组件：直接转到浏览器登录，站点页面里有人机验证。
+      if (!e.cancelled) await _browserLogin();
     } on SecondFactorRequiredException catch (e) {
       setState(() {
         _busy = false;
@@ -71,6 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _offerBrowser = false;
     });
     try {
       await app.loginViaBrowser(context);
@@ -208,6 +221,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             TextStyle(fontSize: 13, color: scheme.onErrorContainer),
                       ),
                     ),
+                    if (_offerBrowser)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _busy ? null : _browserLogin,
+                          icon: const Icon(Icons.open_in_browser, size: 18),
+                          label: const Text('改用浏览器登录'),
+                        ),
+                      ),
                     const SizedBox(height: 14),
                   ],
                   const SizedBox(height: 6),

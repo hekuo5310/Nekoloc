@@ -47,7 +47,8 @@ class CaptchaConfig {
   bool get loginUpfront => loginMode != 'after_failures';
 }
 
-/// 让用户完成一次验证，返回 token；用户关闭或当前平台无法显示时返回 null。
+/// 让用户完成一次验证，返回 token。用户关闭验证窗口时返回空字符串；
+/// 当前平台无法显示验证组件时返回 null（调用方应改走浏览器登录）。
 typedef CaptchaSolver = Future<String?> Function(CaptchaConfig config, String action);
 
 /// 验证码相关的操作名，与服务端 `actions` 的键一致。

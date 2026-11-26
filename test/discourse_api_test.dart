@@ -249,6 +249,31 @@ void main() {
     );
   });
 
+  test('人机验证：用户关掉窗口算取消，显示不了时提示改用浏览器登录', () async {
+    final routes = {
+      'GET /api/v1/auth/captcha': (200, {
+        'enabled': true, 'provider': 'hcaptcha', 'site_key': 'key',
+        'actions': {'login': true}, 'login_mode': 'always',
+      }),
+    };
+    final (cancelApi, _) = await fakeServer(routes);
+    cancelApi.captchaSolver = (_, __) async => '';
+    await expectLater(
+      cancelApi.login(login: 'alice', password: 'pw'),
+      throwsA(isA<CaptchaUnavailableException>().having((e) => e.cancelled, 'cancelled', isTrue)),
+    );
+    final (desktopApi, hits) = await fakeServer(routes);
+    desktopApi.captchaSolver = (_, __) async => null;
+    await expectLater(
+      desktopApi.login(login: 'alice', password: 'pw'),
+      throwsA(isA<CaptchaUnavailableException>()
+          .having((e) => e.cancelled, 'cancelled', isFalse)
+          .having((e) => e.message, 'message', contains('浏览器登录'))),
+    );
+    // 没拿到 token 就不发登录请求。
+    expect(hits.any((h) => h.path == '/api/v1/auth/login'), isFalse);
+  });
+
   test('发新话题必须选节点，按节点别名提交', () async {
     final (api, hits) = await fakeServer({
       'GET /api/v1/nodes': (200, {'nodes': [{'id': 7, 'slug': 'vps', 'name': 'VPS'}]}),
