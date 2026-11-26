@@ -5,8 +5,9 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
-import 'composer_screen.dart';
+import 'chat_screen.dart';
 import 'user_topics_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 公开用户资料，关注与忽略状态均以站点账号为准。
 class PublicProfileScreen extends StatefulWidget {
@@ -34,23 +35,17 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     try {
       final app = context.read<AppState>();
       final p = await app.api.userProfile(widget.username);
-      UserProfile? own;
-      if (app.isLoggedIn && app.user!.username != widget.username) {
-        try {
-          own = await app.api.userProfile(app.user!.username);
-        } catch (_) {
-          // The public profile remains readable if private settings fail.
-        }
-      }
       if (!mounted) return;
+      final self = app.user?.username.toLowerCase() == widget.username.toLowerCase();
       setState(() {
         _profile = p;
-        _ignored = own?.ignoredUsernames.contains(widget.username) ?? false;
-        _canIgnore = own?.canIgnoreUsers ?? false;
+        // 新版站点在资料里直接给出“我是否已屏蔽对方”。
+        _ignored = p.viewerBlocked || app.isBlocked(widget.username);
+        _canIgnore = app.isLoggedIn && !self;
         _error = null;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     }
   }
 
@@ -67,9 +62,19 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       }
       await _load();
     } catch (e) {
-      _hint('关注操作失败：$e');
+      _hint('关注操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openChat() async {
+    try {
+      final channel = await context.read<AppState>().api.openDirectChat(widget.username);
+      if (!mounted) return;
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ChatConversationScreen(channel: channel)));
+    } catch (e) {
+      _hint('无法打开对话：${friendlyError(e)}');
     }
   }
 
@@ -89,14 +94,20 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       );
       if (confirmed != true) return;
     }
+    if (!mounted) return;
+    final app = context.read<AppState>();
+    final target = !_ignored;
+    // 乐观更新：先让楼层与列表立即生效，失败再回滚。
+    app.setBlocked(widget.username, target);
     setState(() => _busy = true);
     try {
-      await context.read<AppState>().api.setUserIgnored(widget.username, !_ignored);
+      await app.api.setUserIgnored(widget.username, target);
       if (!mounted) return;
-      setState(() => _ignored = !_ignored);
-      _hint(_ignored ? '已忽略用户' : '已取消忽略');
+      setState(() => _ignored = target);
+      _hint(target ? '已忽略用户' : '已取消忽略');
     } catch (e) {
-      _hint('操作失败：$e');
+      app.setBlocked(widget.username, !target);
+      _hint('操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -136,7 +147,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                     )),
                   ]),
                   const SizedBox(height: 12),
-                  Text('${p.postCount} 帖 · ${p.badgeCount} 徽章'
+                  Text('${p.postCount} 帖 · ${p.badgeCount} 成就'
                       '${p.totalFollowers == null ? '' : ' · ${p.totalFollowers} 关注者'}'),
                   if (p.bioCooked.isNotEmpty) ...[
                     const SizedBox(height: 12),
@@ -152,11 +163,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                           label: Text(p.isFollowed ? '取消关注' : '关注'),
                         ),
                       OutlinedButton.icon(
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => ComposerScreen(
-                            isPrivateMessage: true, initialRecipients: widget.username,
-                          ),
-                        )),
+                        // 私信就是一对一聊天。
+                        onPressed: _openChat,
                         icon: const Icon(Icons.mail_outline),
                         label: const Text('发私信'),
                       ),

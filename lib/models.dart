@@ -1,4 +1,5 @@
 import 'dart:ui' show Color;
+import 'plugins.dart';
 import 'polls.dart';
 export 'polls.dart';
 
@@ -171,6 +172,12 @@ class Category {
   final int? parentId;
   final int? position;
   final bool readRestricted;
+  final int memberCount;
+  final bool isJoined;
+  final String? description;
+
+  /// 谁能在这个节点发话题：anyone 所有人 / members 节点成员 / moderators 仅版主。
+  final String? topicPolicy;
 
   Category({
     required this.id,
@@ -183,6 +190,10 @@ class Category {
     this.parentId,
     this.position,
     this.readRestricted = false,
+    this.memberCount = 0,
+    this.isJoined = false,
+    this.description,
+    this.topicPolicy,
   });
 
   factory Category.fromJson(dynamic json) => Category(
@@ -196,6 +207,10 @@ class Category {
         parentId: toInt(json['parent_category_id']),
         position: toInt(json['position']),
         readRestricted: toBool(json['read_restricted']),
+        memberCount: toInt(json['member_count']) ?? 0,
+        isJoined: toBool(json['is_joined']),
+        description: json['description']?.toString(),
+        topicPolicy: json['topic_policy']?.toString(),
       );
 
   static String _stripTags(String s) => s
@@ -254,6 +269,7 @@ class Post {
   final int likeCount;
   final bool likedByMe;
   final bool canEdit;
+  final bool canDelete;
   final bool hidden;
   final int? replyToPostNumber;
   final bool bookmarked;
@@ -266,6 +282,9 @@ class Post {
   final bool canVoteDown;
   final List<PostPoll> polls;
   final Map<String, List<String>> pollsVotes;
+  final List<PostReward> rewards;
+  final PostLottery? lottery;
+  final RedEnvelopeClaim? redEnvelopeClaim;
 
   Post({
     required this.id,
@@ -279,6 +298,7 @@ class Post {
     required this.likeCount,
     this.likedByMe = false,
     this.canEdit = false,
+    this.canDelete = false,
     this.hidden = false,
     this.replyToPostNumber,
     this.bookmarked = false,
@@ -291,6 +311,9 @@ class Post {
     this.canVoteDown = false,
     this.polls = const [],
     this.pollsVotes = const {},
+    this.rewards = const [],
+    this.lottery,
+    this.redEnvelopeClaim,
   });
 
   factory Post.fromJson(dynamic json) {
@@ -314,6 +337,7 @@ class Post {
       likeCount: likeCount,
       likedByMe: liked,
       canEdit: toBool(json['can_edit']),
+      canDelete: toBool(json['can_delete']),
       hidden: toBool(json['hidden']),
       replyToPostNumber: toInt(json['reply_to_post_number']),
       bookmarked: toBool(json['bookmarked']),
@@ -333,6 +357,12 @@ class Post {
           if (entry.value is List)
             entry.key.toString(): (entry.value as List).whereType<String>().toList(),
       },
+      rewards: ((json['rewards'] as List?) ?? [])
+          .whereType<Map>().map(PostReward.fromJson).toList(),
+      lottery: json['lottery'] is Map ? PostLottery.fromJson(json['lottery']) : null,
+      redEnvelopeClaim: json['red_envelope_claim'] is Map
+          ? RedEnvelopeClaim.fromJson(json['red_envelope_claim'])
+          : null,
     );
   }
 
@@ -349,6 +379,7 @@ class Post {
     bool? canVoteDown,
     List<PostPoll>? polls,
     Map<String, List<String>>? pollsVotes,
+    PostLottery? lottery,
     bool clearBookmarkId = false,
     bool clearCurrentUserReaction = false,
   }) => Post(
@@ -363,6 +394,7 @@ class Post {
         likeCount: likeCount ?? this.likeCount,
         likedByMe: likedByMe ?? this.likedByMe,
         canEdit: canEdit,
+        canDelete: canDelete,
         hidden: hidden,
         replyToPostNumber: replyToPostNumber,
         bookmarked: bookmarked ?? this.bookmarked,
@@ -376,6 +408,9 @@ class Post {
         canVoteDown: canVoteDown ?? this.canVoteDown,
         polls: polls ?? this.polls,
         pollsVotes: pollsVotes ?? this.pollsVotes,
+        rewards: rewards,
+        lottery: lottery ?? this.lottery,
+        redEnvelopeClaim: redEnvelopeClaim,
       );
 
   /// Reaction responses must not overwrite concurrently changed poll or
@@ -413,6 +448,17 @@ class TopicDetail {
   final List<Post> posts;
   final List<int> stream;
   final List<String> tags;
+  final TopicRedEnvelope? redEnvelope;
+
+  /// 新版接口的楼层分页游标：继续加载楼层号大于它的回复；为 null 表示已经到底。
+  final int? nextAfter;
+
+  /// 当前用户能否回复（话题关闭或无权限时为 false）。
+  final bool canReply;
+
+  /// 定位跳转留下的缺口：楼层号在 (gapAfter, gapBefore) 之间的回复尚未加载。
+  final int? gapAfter;
+  final int? gapBefore;
 
   TopicDetail({
     required this.id,
@@ -429,7 +475,16 @@ class TopicDetail {
     required this.posts,
     required this.stream,
     this.tags = const [],
+    this.redEnvelope,
+    this.nextAfter,
+    this.canReply = true,
+    this.gapAfter,
+    this.gapBefore,
   });
+
+  bool get hasMorePosts => nextAfter != null;
+
+  bool get hasGap => gapAfter != null && gapBefore != null && gapBefore! > gapAfter! + 1;
 
   factory TopicDetail.fromJson(dynamic json) {
     final ps = json['post_stream'] ?? const {};
@@ -448,6 +503,9 @@ class TopicDetail {
       posts: ((ps['posts'] as List?) ?? []).map((e) => Post.fromJson(e)).toList(),
       stream: ((ps['stream'] as List?) ?? []).map((e) => toInt(e) ?? 0).toList(),
       tags: ((json['tags'] as List?) ?? []).whereType<String>().toList(),
+      redEnvelope: json['red_envelope'] is Map
+          ? TopicRedEnvelope.fromJson(json['red_envelope'])
+          : null,
     );
   }
 }
@@ -547,6 +605,9 @@ class UserProfile {
   final List<String> ignoredUsernames;
   final bool canIgnoreUsers;
 
+  /// 我是否已屏蔽此用户（新版接口在资料里直接给出）。
+  final bool viewerBlocked;
+
   UserProfile({
     required this.username,
     this.name,
@@ -564,6 +625,7 @@ class UserProfile {
     this.totalFollowers,
     this.ignoredUsernames = const [],
     this.canIgnoreUsers = false,
+    this.viewerBlocked = false,
   });
 
   factory UserProfile.fromJson(dynamic json) => UserProfile(

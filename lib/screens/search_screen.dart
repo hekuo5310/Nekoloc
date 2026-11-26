@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../models.dart';
-import '../search_query.dart';
 import '../util.dart';
 import '../widgets/common.dart';
+import 'tag_topics_screen.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -15,13 +17,12 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _ctrl = TextEditingController();
-  final _author = TextEditingController();
   final _tag = TextEditingController();
   SearchResult? _result;
   bool _loading = false;
   bool _loadingMore = false;
-  bool _titleOnly = false;
   String _order = 'relevance';
+  bool _activeNewest = false;
   String _activeQuery = '';
   String? _error;
   String? _pageError;
@@ -31,29 +32,35 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void dispose() {
     _requestId++;
-    _ctrl.dispose(); _author.dispose(); _tag.dispose();
+    _ctrl.dispose(); _tag.dispose();
     super.dispose();
   }
 
   Future<void> _search([String? text]) async {
-    final query = buildSearchQuery(text ?? _ctrl.text, titleOnly: _titleOnly,
-      username: _author.text, tag: _tag.text, order: _order);
+    final query = (text ?? _ctrl.text).trim();
+    final newest = _order == 'latest';
     if (query.isEmpty) return;
     final requestId = ++_requestId;
     FocusScope.of(context).unfocus();
     setState(() {
       _loading = true; _loadingMore = false; _error = null;
-      _pageError = null; _result = null; _page = 1; _activeQuery = query;
+      _pageError = null; _result = null; _page = 1; _activeQuery = query; _activeNewest = newest;
     });
     try {
-      final r = await context.read<AppState>().api.search(query);
+      final r = await context.read<AppState>().api.search(query, newest: newest);
       if (!mounted || requestId != _requestId) return;
-      setState(() => _result = r);
+      setState(() => _result = r.withoutBlocked(context.read<AppState>().blockedUsernames));
     } catch (e) {
-      if (mounted && requestId == _requestId) setState(() => _error = e.toString());
+      if (mounted && requestId == _requestId) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted && requestId == _requestId) setState(() => _loading = false);
     }
+  }
+
+  void _openTag() {
+    final tag = _tag.text.trim();
+    if (tag.isEmpty) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => TagTopicsScreen(tag: tag)));
   }
 
   Future<void> _more() async {
@@ -61,19 +68,19 @@ class _SearchScreenState extends State<SearchScreen> {
     final requestId = _requestId;
     setState(() { _loadingMore = true; _pageError = null; });
     try {
-      final r = await context.read<AppState>().api.search(_activeQuery, page: _page + 1);
+      final r = await context.read<AppState>().api.search(_activeQuery, page: _page + 1, newest: _activeNewest);
       if (!mounted || requestId != _requestId) return;
       final existing = _result!.items;
       String key(SearchPostItem p) => p.id > 0 ? '${p.id}' : '${p.topicId}:${p.postNumber}';
       final seen = existing.map(key).toSet();
-      final added = r.items.where((p) => seen.add(key(p))).toList();
+      final added = r.withoutBlocked(context.read<AppState>().blockedUsernames).items.where((p) => seen.add(key(p))).toList();
       setState(() {
         _page++;
         _result = SearchResult(items: [...existing, ...added],
           hasMore: r.hasMore && added.isNotEmpty);
       });
     } catch (e) {
-      if (mounted && requestId == _requestId) setState(() => _pageError = e.toString());
+      if (mounted && requestId == _requestId) setState(() => _pageError = friendlyError(e));
     } finally {
       if (mounted && requestId == _requestId) setState(() => _loadingMore = false);
     }
@@ -93,20 +100,19 @@ class _SearchScreenState extends State<SearchScreen> {
         ExpansionTile(title: const Text('搜索筛选'), leading: const Icon(Icons.tune),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12), children: [
           Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            FilterChip(label: const Text('仅标题'), selected: _titleOnly,
-              onSelected: (v) => setState(() => _titleOnly = v)),
             DropdownButton<String>(value: _order, items: const [
               DropdownMenuItem(value: 'relevance', child: Text('相关程度')),
               DropdownMenuItem(value: 'latest', child: Text('最新发布')),
-              DropdownMenuItem(value: 'likes', child: Text('最多点赞')),
             ], onChanged: (v) => setState(() => _order = v ?? 'relevance')),
           ]),
-          TextField(controller: _author, decoration: const InputDecoration(
-            labelText: '作者用户名（可选）', prefixIcon: Icon(Icons.alternate_email))),
-          TextField(controller: _tag, decoration: const InputDecoration(
-            labelText: '标签（可选）', prefixIcon: Icon(Icons.tag))),
+          // 站点搜索不支持按作者、仅标题或标签筛选（这些写法会被当成普通文字），
+          // 标签改为直接打开该标签的话题列表。
+          TextField(controller: _tag, textInputAction: TextInputAction.go,
+            onSubmitted: (_) => _openTag(),
+            decoration: InputDecoration(labelText: '按标签浏览', prefixIcon: const Icon(Icons.tag),
+              suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), tooltip: '打开标签', onPressed: _openTag))),
           Align(alignment: Alignment.centerRight, child: TextButton.icon(
-            onPressed: _search, icon: const Icon(Icons.search), label: const Text('应用筛选'))),
+            onPressed: _search, icon: const Icon(Icons.search), label: const Text('按此排序搜索'))),
         ]),
         Expanded(child: _loading ? const LoadingView()
           : _error != null ? ErrorView(message: _error!, onRetry: _search)
@@ -133,7 +139,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 subtitle: Text('${item.blurb}\n${item.username} · #${item.postNumber} · ${timeAgo(item.createdAt)}',
                   maxLines: 3, overflow: TextOverflow.ellipsis),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                  TopicDetailScreen(topicId: item.topicId, initialPostId: item.id > 0 ? item.id : null))),
+                  TopicDetailScreen(topicId: item.topicId, initialPostId: item.id > 0 ? item.id : null,
+                    initialPostNumber: item.postNumber > 1 ? item.postNumber : null))),
               );
             },
           )),

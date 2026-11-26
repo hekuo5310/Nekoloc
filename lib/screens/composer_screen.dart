@@ -10,7 +10,12 @@ import 'package:markdown/markdown.dart' as md;
 import '../app_state.dart';
 import '../models.dart';
 import '../composer_tools.dart';
+import '../plugin_drafts.dart';
+import '../widgets/gif_picker_sheet.dart';
+import 'image_editor_screen.dart';
+import '../widgets/plugin_composer_options.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 发帖 / 回复 / 私信编辑器
 class ComposerScreen extends StatefulWidget {
@@ -55,6 +60,9 @@ class _ComposerScreenState extends State<ComposerScreen> {
   String? _draftKey;
   Timer? _draftTimer;
   bool _submitted = false;
+  PluginDrafts _plugins = const PluginDrafts();
+
+  bool get _pluginsAllowed => !widget.isPrivateMessage && widget.editPostId == null;
   bool _preview = false;
 
   @override
@@ -139,10 +147,15 @@ class _ComposerScreenState extends State<ComposerScreen> {
       for (final c in cats) {
         if (c.parentId == null) parents[c.id] = c.name;
       }
+      // 只列出能发话题的节点：仅版主可发的不列；需要成员身份的，已加入的排在前面。
       final usable = cats
-          .where((c) => c.parentId != null && !c.readRestricted)
+          .where((c) => !c.readRestricted && c.topicPolicy != 'moderators')
           .toList()
-        ..sort((a, b) => (a.position ?? 99).compareTo(b.position ?? 99));
+        ..sort((a, b) {
+          final joined = (b.isJoined ? 1 : 0) - (a.isJoined ? 1 : 0);
+          if (joined != 0) return joined;
+          return b.memberCount.compareTo(a.memberCount);
+        });
       if (!mounted) return;
       setState(() {
         _categories = usable;
@@ -162,13 +175,22 @@ class _ComposerScreenState extends State<ComposerScreen> {
         allowMultiple: false,
       );
       final file = files.isNotEmpty ? files.single : null;
-      final path = file?.path;
-      if (!mounted || file == null || path == null) return;
+      final picked = file?.path;
+      if (!mounted || file == null || picked == null) return;
+
+      // 上传前先编辑（旋转、裁剪）；返回键取消则不上传。
+      final path = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (_) => ImageEditorScreen(path: picked)),
+      );
+      if (!mounted || path == null) return;
+      final edited = path != picked;
+      final uploadName = edited ? '${file.name.split('.').first}.jpg' : file.name;
 
       setState(() => _uploading = true);
       final resp = await app.api.uploadImage(
         filePath: path,
-        filename: file.name,
+        filename: uploadName,
         onProgress: (sent, total) {
           // 进度由 _uploading 状态与 snackbar 提示
         },
@@ -180,7 +202,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
         throw '上传失败：响应缺少图片地址';
       }
       final markdown =
-          '![${file.name}](${shortUrl ?? url})';
+          '![$uploadName](${shortUrl ?? url})';
       final sel = _contentCtrl.selection;
       final text = _contentCtrl.text;
       final insertPos = sel.isValid ? sel.baseOffset : text.length;
@@ -198,7 +220,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('图片上传失败：$e')));
+            SnackBar(content: Text('图片上传失败：${friendlyError(e)}')));
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -214,6 +236,30 @@ class _ComposerScreenState extends State<ComposerScreen> {
 
   void _prefix(String prefix) {
     _contentCtrl.value = prefixLines(_contentCtrl.value, prefix);
+    setState(() => _preview = false);
+    _contentFocus.requestFocus();
+  }
+
+  /// 在光标处插入 GIF（Markdown 图片语法）。没有密钥时提示去设置里填写。
+  Future<void> _insertGif() async {
+    final app = context.read<AppState>();
+    if (app.klipyApiKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先在设置中填写 GIF 搜索密钥')),
+      );
+      return;
+    }
+    final url = await showGifPicker(context, app.klipyApiKey);
+    if (url == null || !mounted) return;
+    final text = _contentCtrl.text;
+    final sel = _contentCtrl.selection;
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : text.length;
+    final insert = '\n![GIF]($url)\n';
+    _contentCtrl.value = TextEditingValue(
+      text: text.replaceRange(start, end, insert),
+      selection: TextSelection.collapsed(offset: start + insert.length),
+    );
     setState(() => _preview = false);
     _contentFocus.requestFocus();
   }
@@ -263,11 +309,44 @@ class _ComposerScreenState extends State<ComposerScreen> {
       setState(() => _error = '请输入标题');
       return;
     }
+    if (widget.isNewTopic && widget.editPostId == null && _selectedCategory == null) {
+      setState(() => _error = '请选择发帖的节点');
+      return;
+    }
     if (raw.trim().isEmpty) {
       setState(() => _error = '请输入内容（支持 Markdown）');
       return;
     }
+    if (_pluginsAllowed && _plugins.error != null) {
+      setState(() => _error = _plugins.error);
+      return;
+    }
     await _doSubmit(title: title, raw: raw);
+  }
+
+  /// 红包与抽奖是站点插件，必须在话题或楼层存在之后再发第二个请求挂上去。
+  /// 失败只提示，不影响已经发布的内容。
+  Future<void> _attachPlugins(AppState app, Map<String, dynamic> result) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final topicId = int.tryParse('${result['topic_id'] ?? widget.topicId}');
+    final postId = int.tryParse('${result['id']}');
+    final env = _plugins.envelope;
+    final lot = _plugins.lottery;
+    if (env != null && topicId != null && topicId > 0) {
+      try {
+        await app.api.createRedEnvelope(topicId,
+            totalPoints: env.totalPoints, totalCount: env.totalCount);
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('红包创建失败：${friendlyError(e)}')));
+      }
+    }
+    if (lot != null && postId != null && postId > 0) {
+      try {
+        await app.api.createLottery(lot.toPayload(postId: postId, now: DateTime.now()));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('抽奖创建失败：${friendlyError(e)}')));
+      }
+    }
   }
 
   Future<void> _doSubmit({
@@ -311,6 +390,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
         );
       }
       if (!mounted) return;
+      if (_pluginsAllowed) await _attachPlugins(app, result);
+      if (!mounted) return;
       _submitted = true;
       _draftTimer?.cancel();
       if (_draftKey != null) await app.prefs.remove(_draftKey!);
@@ -331,7 +412,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     }
   }
@@ -408,11 +489,15 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
+                if (_pluginsAllowed) ...[
+                  PluginComposerOptions(onChanged: (d) => _plugins = d),
+                  const SizedBox(height: 12),
+                ],
                 if (widget.isNewTopic) ...[
                   if (_categories != null)
                     DropdownButtonFormField<int>(
                       value: _selectedCategory,
-                      decoration: const InputDecoration(hintText: '选择分类（可选）'),
+                      decoration: const InputDecoration(hintText: '选择节点'),
                       items: [
                         for (final c in _categories!)
                           DropdownMenuItem(
@@ -431,7 +516,8 @@ class _ComposerScreenState extends State<ComposerScreen> {
                                 const SizedBox(width: 8),
                                 Flexible(
                                   child: Text(
-                                    '${_parentNames?[c.parentId] ?? ''} / ${c.name}',
+                                    '${c.parentId == null ? '' : '${_parentNames?[c.parentId] ?? ''} / '}${c.name}'
+                                    '${c.topicPolicy == 'members' && !c.isJoined ? '（需先加入）' : ''}',
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 13.5),
                                   ),
@@ -457,6 +543,7 @@ class _ComposerScreenState extends State<ComposerScreen> {
                   IconButton(tooltip: '代码块', onPressed: _busy ? null : () => _format('\n```\n', '\n```\n', placeholder: '代码'), icon: const Icon(Icons.code)),
                   IconButton(tooltip: '链接', onPressed: _busy ? null : () => _format('[', '](https://)', placeholder: '链接文字'), icon: const Icon(Icons.link)),
                   IconButton(tooltip: '插入投票', onPressed: _busy ? null : _insertPoll, icon: const Icon(Icons.poll_outlined)),
+                  IconButton(tooltip: 'GIF', onPressed: _busy ? null : _insertGif, icon: const Icon(Icons.gif_box_outlined)),
                   TextButton.icon(onPressed: () => setState(() => _preview = !_preview),
                     icon: Icon(_preview ? Icons.edit_outlined : Icons.visibility_outlined),
                     label: Text(_preview ? '继续编辑' : '预览')),

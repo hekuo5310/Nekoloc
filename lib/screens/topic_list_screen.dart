@@ -8,6 +8,8 @@ import 'composer_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 首页：话题流（最新 / 热门 / 新帖 / 未读）
 class TopicListScreen extends StatefulWidget {
@@ -19,11 +21,13 @@ class TopicListScreen extends StatefulWidget {
 
 class _TopicListScreenState extends State<TopicListScreen>
     with AutomaticKeepAliveClientMixin {
+  // 新版站点支持的列表：最新、热门、上升中、精选，以及我加入的节点（需登录）。
   static const _filters = [
     ('latest', '最新'),
     ('top', '热门'),
-    ('new', '新帖'),
-    ('unread', '未读'),
+    ('rising', '上升中'),
+    ('featured', '精选'),
+    ('following', '关注'),
   ];
 
   String _filter = 'latest';
@@ -71,7 +75,7 @@ class _TopicListScreenState extends State<TopicListScreen>
       setState(() {
         _topics
           ..clear()
-          ..addAll(result.topics);
+          ..addAll(result.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users
           ..clear()
           ..addAll(result.users);
@@ -83,7 +87,7 @@ class _TopicListScreenState extends State<TopicListScreen>
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -109,7 +113,7 @@ class _TopicListScreenState extends State<TopicListScreen>
           await context.read<AppState>().api.topicList(_filter, page: _page + 1);
       if (!mounted) return;
       setState(() {
-        _topics.addAll(result.topics);
+        _topics.addAll(result.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users.addAll(result.users);
         _hasMore = result.hasMore;
         _page += 1;
@@ -201,7 +205,7 @@ class _TopicListScreenState extends State<TopicListScreen>
       ),
       body: _error != null && _topics.isEmpty
           ? ErrorView(
-              message: '$_error${_filter == 'unread' || _filter == 'new' ? '\n（该列表可能需要登录后查看）' : ''}',
+              message: '$_error${_filter == 'following' ? '\n（该列表需要登录后查看）' : ''}',
               onRetry: _reload)
           : _loading
               ? const LoadingView()

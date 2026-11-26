@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../api/discourse_api.dart';
 import '../app_state.dart';
+import 'password_reset_screen.dart';
+import 'signup_screen.dart';
 import '../theme.dart';
+import '../api/friendly_error.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -57,12 +60,12 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _error = e.toString();
+        _error = friendlyError(e);
       });
     }
   }
 
-  /// 浏览器授权登录：支持第三方 OAuth（LinuxDo Connect 等）、邮箱登录链接等全部方式
+  /// 浏览器登录：在站点登录页完成（第三方账号、两步验证、人机验证都在页面里），完成后自动返回
   Future<void> _browserLogin() async {
     final app = context.read<AppState>();
     setState(() {
@@ -77,9 +80,9 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
-      final msg = e.toString();
-      if (msg != '已取消授权' && mounted) {
-        setState(() => _error = '浏览器登录失败：$msg');
+      final cancelled = e.toString() == '已取消授权';
+      if (!cancelled && mounted) {
+        setState(() => _error = '浏览器登录失败：${friendlyError(e, fallback: '请稍后重试')}');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -220,6 +223,22 @@ class _LoginScreenState extends State<LoginScreen> {
                                 strokeWidth: 2.2, color: Colors.white))
                         : const Text('登录'),
                   ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const SignupScreen())),
+                        child: const Text('注册新账号'),
+                      ),
+                      const Text('·'),
+                      TextButton(
+                        onPressed: () => Navigator.push(context,
+                            MaterialPageRoute(builder: (_) => const PasswordResetScreen())),
+                        child: const Text('忘记密码'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -242,12 +261,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       foregroundColor: scheme.primary,
                     ),
                     icon: const Icon(Icons.open_in_browser, size: 19),
-                    label: const Text('浏览器授权登录'),
+                    label: const Text('浏览器登录'),
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    '浏览器授权登录支持第三方账号（LinuxDo Connect 等）、邮箱登录链接、\n'
-                    '2FA 等站点提供的全部登录方式，授权后自动返回本应用',
+                    '在站点登录页完成登录，支持 GitHub、X 等第三方账号、\n'
+                    '两步验证和人机验证，完成后自动返回本应用。\n'
+                    'Google 不允许在应用内页面登录，请改用其他方式',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 11.5,

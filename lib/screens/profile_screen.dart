@@ -4,6 +4,13 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
+import '../widgets/checkin_card.dart';
+import 'profile_edit_screen.dart';
+import 'badges_screen.dart';
+import 'points_history_screen.dart';
+import 'apps_screen.dart';
+import 'security_screen.dart';
+import 'upgrade_progress_screen.dart';
 import '../models.dart';
 import '../update_checker.dart';
 import '../util.dart';
@@ -12,6 +19,7 @@ import 'bookmarks_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 import 'user_topics_screen.dart';
+import '../api/friendly_error.dart';
 
 /// 我的（个人中心）
 class ProfileScreen extends StatefulWidget {
@@ -53,7 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyError(e));
     }
   }
 
@@ -180,7 +188,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _stat('帖子', '${p?.postCount ?? '-'}'),
-                        _stat('徽章', '${p?.badgeCount ?? '-'}'),
+                        _stat('成就', '${p?.badgeCount ?? '-'}'),
                         _stat('主题', '${p?.topicCount ?? '-'}'),
                         _stat('注册于', p?.createdAt != null ? fullDate(p!.createdAt) : '-'),
                       ],
@@ -197,6 +205,76 @@ class _ProfileScreenState extends State<ProfileScreen>
                     style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
               ),
             const SizedBox(height: 6),
+            const CheckinCard(),
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('编辑资料'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      final saved = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProfileEditScreen()),
+                      );
+                      if (saved == true) _load();
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.military_tech_outlined),
+                    title: const Text('我的成就'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BadgesScreen()),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.stars_outlined),
+                    title: const Text('积分记录'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const PointsHistoryScreen()),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.apps_outlined),
+                    title: const Text('应用目录'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AppsScreen()),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.shield_outlined),
+                    title: const Text('账号安全'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SecurityScreen()),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    leading: const Icon(Icons.trending_up),
+                    title: const Text('升级进度'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const UpgradeProgressScreen()),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Card(
               margin: const EdgeInsets.symmetric(vertical: 5),
               child: Column(

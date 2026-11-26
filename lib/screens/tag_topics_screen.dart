@@ -5,6 +5,8 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 站点标签页，与分类页共用话题列表卡片。
 class TagTopicsScreen extends StatefulWidget {
@@ -47,13 +49,13 @@ class _TagTopicsScreenState extends State<TagTopicsScreen> {
       final r = await context.read<AppState>().api.tagTopics(widget.tag);
       if (!mounted) return;
       setState(() {
-        _topics..clear()..addAll(r.topics);
+        _topics..clear()..addAll(r.withoutBlocked(context.read<AppState>().blockedUsernames).topics);
         _users..clear()..addAll(r.users);
         _page = 0;
-        _hasMore = r.hasMore && r.topics.isNotEmpty;
+        _hasMore = r.hasMore && r.withoutBlocked(context.read<AppState>().blockedUsernames).topics.isNotEmpty;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -66,7 +68,7 @@ class _TagTopicsScreenState extends State<TagTopicsScreen> {
       final r = await context.read<AppState>().api.tagTopics(widget.tag, page: _page + 1);
       if (!mounted) return;
       final seen = _topics.map((topic) => topic.id).toSet();
-      final added = r.topics.where((topic) => seen.add(topic.id)).toList();
+      final added = r.withoutBlocked(context.read<AppState>().blockedUsernames).topics.where((topic) => seen.add(topic.id)).toList();
       setState(() {
         _topics.addAll(added);
         _users.addAll(r.users);
@@ -75,7 +77,7 @@ class _TagTopicsScreenState extends State<TagTopicsScreen> {
       });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('加载更多失败：$e')),
+        SnackBar(content: Text('加载更多失败：${friendlyError(e)}')),
       );
     } finally {
       if (mounted) setState(() => _loadingMore = false);

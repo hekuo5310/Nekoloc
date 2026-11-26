@@ -12,17 +12,16 @@
 
 - **登录**
   - 账号密码登录（用户名 / 邮箱 + 密码），自动识别并支持 2FA 动态口令
-  - 浏览器授权登录：在内置浏览器中完成站点登录后授权，支持**第三方账号（LinuxDo Connect 等）、邮箱登录链接、2FA 等**站点提供的全部登录方式，授权后凭 RSA 加密的一次性凭据（User API Key）自动返回应用
+  - 浏览器登录：在内置浏览器中打开站点登录页完成登录（PKCE），支持 GitHub、X 等**第三方账号、两步验证和人机验证**，完成后自动返回应用
   - 凭据仅保存在设备本地，不上传任何第三方服务器
 - **话题流**：最新 / 热门 / 新帖 / 未读，下拉刷新 + 无限滚动
 - **分类浏览**：分类与子分类，点击进入分类话题列表
 - **话题详情**：Discourse 原生 HTML 富文本渲染（引用块、代码块、图片、链接等），楼层分页加载；**图片全屏查看器**（双指缩放 / 双击缩放 / 多图左右切换 / 页码指示）
-- **互动**：表情反应（红心 / 赞同 / 哈哈 / 惊讶 / 庆祝 五种表情，长按点赞按钮或点击小箭头展开选择器），回复楼层，发起新话题（Markdown）
+- **互动**：赞成 / 反对票（站点的“赞”即赞成票），回复楼层，发起新话题（Markdown，需选择节点）
 - **投票与写作工具**：帖子内单选 / 多选投票及撤回；Markdown 格式工具与本机预览、投票区块插入；搜索按标题 / 作者 / 标签 / 排序筛选和分页；逐楼收藏、收藏分页与取消收藏
 - **官方客户端互动功能**：帖子举报（站点动态理由）、标签话题列表、帖子赞成 / 反对投票、公开用户资料与关注 / 忽略；编辑器本机草稿自动恢复
-- **发帖设备信息**：对齐官方 APP 的 `mobile_source` 功能 —— 移动端发帖 / 回复时在帖子下方显示设备徽章（如「Pixel 8 Pro」），支持 关闭 / 仅平台 / 品牌 / 完整型号 四档设置；Android 按官方逻辑识别子品牌（Redmi / POCO / iQOO / realme / HONOR / Nothing），iOS 输出友好型号名；桌面端不发送
 - **图片上传**：编辑器中选择本地图片，上传后自动以 Markdown 语法插入正文
-- **私信**：会话列表、新建私信（多收件人）、回复私信
+- **私信与聊天**：私信即一对一聊天（含群聊），公开聊天频道，图片消息，实时推送
 - **收藏**：话题一键收藏 / 取消收藏，收藏列表统一管理
 - **阅读进度同步**：自动上报阅读时间，与网页版共享已读 / 未读状态
 - **通知中心**：回复、引用、提及、点赞等通知，点击跳转话题、一键全部已读
@@ -67,11 +66,14 @@ git push origin v1.2.1
 
 ## 登录与 API 说明
 
-本应用全部使用 **Discourse 普通用户端点**（与浏览器访问网页版一致的会话 / 授权机制），不涉及管理员 API Key：
+NodeLoc 已从 Discourse 迁移到自建后端，旧的 Discourse 路径对客户端一律返回 410。自 2.0 起，本应用全部改用站点原生接口 **`/api/v1`**（接口与行为参照官方客户端 [nodeloc/nodeloc-android](https://github.com/nodeloc/nodeloc-android) 的 `api-v1` 分支）：
 
-- 账号密码登录：`GET /session/csrf.json` 获取令牌，`POST /session` 登录（自动携带 2FA 字段），Cookie 会话持久化在本机
-- 浏览器授权登录：走 Discourse 官方 **User API Key** 流程——应用生成一次性 RSA-2048 密钥对，在内置浏览器中打开 `/user-api-key/new` 授权页（未登录时先跳转站点登录页，此时可使用任意登录方式），授权后站点把加密凭据重定向到 `discourse://` 协议，应用拦截并解密得到 API Key，之后以 `User-Api-Key` 请求头访问只读 / 写入端点
-- 其余均为常规端点（`/latest.json`、`/t/{id}.json`、`/posts`、`/post_actions`、`/bookmarks`、`/uploads.json`、`/topics/timings`、`/notifications.json` 等）
+- **鉴权**：Bearer token，只保存在本机；请求只带给站点本身，外站图片等请求不会携带
+- **账号密码登录**：`POST /api/v1/auth/login`，支持动态码 / 备用码与“受信任设备”。站点开启人机验证（hCaptcha）时，Android / iOS 在应用内弹出验证；桌面端请使用浏览器登录
+- **浏览器登录**：在内置浏览器打开站点登录页（PKCE），登录后站点跳转 `nodeloc://auth?code=…`，应用拦截后用 `POST /api/v1/auth/app/exchange` 换取 token。密码、动态码、人机验证、GitHub / X 等第三方账号都在站点页面里完成；Google 不允许在应用内页面登录
+- **实时推送**：服务端事件流 `GET /api/v1/notifications/stream`（SSE）：新通知、新聊天消息即时到达
+- **错误**：统一为 `{"error":{"code","message","fields"}}`，站点文案原样展示，状态码不进入界面
+- **新版站点没有的功能已隐藏**：表情反应、打赏、聊天消息编辑与线程、私信话题（私信并入聊天）、发帖设备信息、自定义注册字段
 
 ## Google Play 发布
 
@@ -112,14 +114,14 @@ Linux 构建另需：`sudo apt install cmake ninja-build libgtk-3-dev libwebkit2
 │   ├── patch_platforms.py        # 平台工程补丁（权限/名称/图标）
 │   └── make_icon.py              # 图标生成（渐变底 + 白色字标）
 ├── lib/
-│   ├── api/discourse_api.dart    # Discourse 用户级 API 客户端（Cookie / User-Api-Key 双模式）
+│   ├── api/discourse_api.dart    # 站点 API 客户端（/api/v1，Bearer token）
+│   ├── api/v1_mapping.dart       # 新版接口响应 → 界面模型的纯映射
 │   ├── models.dart               # 数据模型
-│   ├── app_state.dart            # 全局状态（会话/主题/浏览器授权登录）
+│   ├── app_state.dart            # 全局状态（会话/主题/浏览器登录）
 │   ├── theme.dart                # NodeLoc 品牌主题
-│   ├── oauth/                    # RSA 工具 + 内置浏览器授权登录
+│   ├── oauth/                    # 浏览器登录（PKCE）+ 人机验证弹窗
 │   ├── desktop_window.dart       # 桌面窗口与自定义标题栏
 │   ├── update_checker.dart       # GitHub Releases 更新检查
-│   ├── reactions.dart            # 表情反应定义（discourse-reactions）
 │   ├── widgets/                  # 通用组件（含品牌加载动画）
 │   └── screens/                  # 各界面
 └── pubspec.yaml

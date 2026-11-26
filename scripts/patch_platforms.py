@@ -111,27 +111,62 @@ def patch_android():
             '    <uses-permission android:name="android.permission.INTERNET"/>',
             1,
         )
+    # 系统通知（Android 13+ 需要运行时授权，清单里也要声明）
+    if 'android.permission.POST_NOTIFICATIONS' not in m:
+        m = m.replace(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+            '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>',
+            1,
+        )
     m = m.replace(f'android:label="{PROJECT_NAME}"', f'android:label="{APP_LABEL}"')
     write(p, m)
 
 
-@step('Android compileSdk 提升到 36（flutter_plugin_android_lifecycle 等插件要求）')
+ANDROID_COMPILE_SDK = 37
+DESUGAR_LIBS = 'com.android.tools:desugar_jdk_libs:2.1.5'
+
+
+def patch_gradle_build(m, kts):
+    """compileSdk 提升到 37（androidx.core 1.19 要求），并开启 core library desugaring
+    （flutter_local_notifications 要求）。纯文本变换，便于单测。"""
+    if kts:
+        m = re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)',
+                   f'compileSdk = {ANDROID_COMPILE_SDK}', m)
+        if 'isCoreLibraryDesugaringEnabled' not in m:
+            m, n = re.subn(r'compileOptions\s*\{', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', m, count=1)
+            if n != 1:
+                raise ValueError('compileOptions 未找到，无法开启 desugaring')
+        if 'coreLibraryDesugaring(' not in m:
+            m = m.rstrip('\n') + f'\n\ndependencies {{\n    coreLibraryDesugaring("{DESUGAR_LIBS}")\n}}\n'
+    else:
+        m = re.sub(r'compileSdkVersion\s+(?:flutter\.compileSdkVersion|\d+)',
+                   f'compileSdkVersion {ANDROID_COMPILE_SDK}', m)
+        m = re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)',
+                   f'compileSdk = {ANDROID_COMPILE_SDK}', m)
+        if 'coreLibraryDesugaringEnabled' not in m:
+            m, n = re.subn(r'compileOptions\s*\{', 'compileOptions {\n        coreLibraryDesugaringEnabled true', m, count=1)
+            if n != 1:
+                raise ValueError('compileOptions 未找到，无法开启 desugaring')
+        if 'coreLibraryDesugaring ' not in m:
+            m = m.rstrip('\n') + f"\n\ndependencies {{\n    coreLibraryDesugaring '{DESUGAR_LIBS}'\n}}\n"
+    if str(ANDROID_COMPILE_SDK) not in m:
+        raise ValueError('compileSdk 未能设置')
+    return m
+
+
 def patch_android_gradle():
-    import re as _re
+    # 安卓构建里必须成功（缺了它构建会失败），不能只打印 SKIP；
+    # 其他平台的构建没有 android 目录，直接跳过。
+    if not os.path.isdir('android'):
+        return
     for p in ['android/app/build.gradle.kts', 'android/app/build.gradle']:
         m = read(p)
         if m is None:
             continue
-        orig = m
-        # Kotlin DSL: compileSdk = <n|flutter.compileSdkVersion>
-        m = _re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)',
-                    'compileSdk = 36', m)
-        # Groovy DSL: compileSdkVersion <n|flutter.compileSdkVersion>
-        m = _re.sub(r'compileSdkVersion\s+(?:flutter\.compileSdkVersion|\d+)',
-                    'compileSdkVersion 36', m)
-        if m != orig:
-            write(p, m)
-            return
+        write(p, patch_gradle_build(m, p.endswith('.kts')))
+        print(f'[OK] Android compileSdk {ANDROID_COMPILE_SDK} + core library desugaring')
+        return
     raise FileNotFoundError('android/app/build.gradle(.kts)')
 
 

@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
-import '../mobile_source.dart';
+import '../push_watch.dart';
+import 'blocked_users_screen.dart';
+import 'preference_screen.dart';
 import '../theme.dart';
 import '../update_checker.dart';
 import '../update_source.dart';
@@ -21,23 +23,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _checking = false;
   bool _playUpdates = false;
   int _pawTaps = 0; // 猫咪彩蛋计数器
-  String? _deviceBadge; // 当前设备徽章预览（null = 桌面端/不可用）
 
   @override
   void initState() {
     super.initState();
-    _loadDevicePreview();
     _loadUpdateSource();
   }
 
   Future<void> _loadUpdateSource() async {
     final play = await UpdateSource.usesPlay();
     if (mounted) setState(() => _playUpdates = play);
-  }
-
-  Future<void> _loadDevicePreview() async {
-    final badge = await MobileSource.previewBadge(4);
-    if (mounted) setState(() => _deviceBadge = badge);
   }
 
   Future<void> _checkUpdate() async {
@@ -181,6 +176,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _editKlipyKey(String current) async {
+    final ctl = TextEditingController(text: current);
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('GIF 搜索密钥'),
+        content: TextField(
+          controller: ctl,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: '密钥',
+            helperText: '密钥只保存在本机，不会上传到站点',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: const Text('保存')),
+        ],
+      ),
+    );
+    if (saved != null && mounted) {
+      context.read<AppState>().setKlipyApiKey(saved);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -191,6 +211,93 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(10),
         children: [
+          if (app.isLoggedIn)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: Column(children: [
+                for (final entry in const [
+                  (Icons.notifications_active_outlined, '通知偏好', PreferenceKind.notifications),
+                  (Icons.mail_outline, '邮件通知', PreferenceKind.email),
+                  (Icons.visibility_off_outlined, '隐私', PreferenceKind.privacy),
+                ]) ...[
+                  ListTile(
+                    leading: Icon(entry.$1),
+                    title: Text(entry.$2),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => PreferenceScreen(kind: entry.$3)),
+                    ),
+                  ),
+                  if (entry.$3 != PreferenceKind.privacy)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                ],
+              ]),
+            ),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 5),
+            child: ListTile(
+              leading: const Icon(Icons.gif_box_outlined),
+              title: const Text('GIF 搜索密钥'),
+              subtitle: Text(
+                app.klipyApiKey.isEmpty
+                    ? '未设置。填写后可在发帖时搜索 GIF'
+                    : '已设置（仅保存在本机）',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _editKlipyKey(app.klipyApiKey),
+            ),
+          ),
+          if (app.isLoggedIn)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: ListTile(
+                leading: const Icon(Icons.block),
+                title: const Text('屏蔽用户'),
+                subtitle: const Text('被屏蔽用户的话题、回复与搜索结果将不再显示',
+                    style: TextStyle(fontSize: 12)),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BlockedUsersScreen()),
+                ),
+              ),
+            ),
+          if (app.isLoggedIn)
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 5),
+              child: Column(
+                children: [
+                  const ListTile(
+                    leading: Icon(Icons.notifications_outlined),
+                    title: Text('消息提醒'),
+                    subtitle: Text('应用运行期间每 15 分钟检查一次新通知',
+                        style: TextStyle(fontSize: 12)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('回复与提及'),
+                    value: app.pushSettings.replies,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(replies: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('点赞与表情'),
+                    value: app.pushSettings.likes,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(likes: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('私信与聊天'),
+                    value: app.pushSettings.messages,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(messages: v)),
+                  ),
+                  SwitchListTile(
+                    title: const Text('其他通知'),
+                    value: app.pushSettings.system,
+                    onChanged: (v) => app.setPushSettings(app.pushSettings.copyWith(system: v)),
+                  ),
+                ],
+              ),
+            ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 5),
             child: Column(
@@ -221,59 +328,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: _checking ? null : _checkUpdate,
                 ),
               ],
-            ),
-          ),
-          // ---------------- 发帖设备信息（对齐官方 APP mobile_source）
-          Card(
-            margin: const EdgeInsets.symmetric(vertical: 5),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.smartphone_outlined, size: 18),
-                      SizedBox(width: 6),
-                      Text('发帖设备信息',
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(
-                          value: 0,
-                          icon: Icon(Icons.block, size: 16),
-                          label: Text('关闭')),
-                      ButtonSegment(
-                          value: 1,
-                          icon: Icon(Icons.android, size: 16),
-                          label: Text('平台')),
-                      ButtonSegment(
-                          value: 3,
-                          icon: Icon(Icons.business, size: 16),
-                          label: Text('品牌')),
-                      ButtonSegment(
-                          value: 4,
-                          icon: Icon(Icons.smartphone, size: 16),
-                          label: Text('型号')),
-                    ],
-                    selected: {app.postSourceLevel},
-                    onSelectionChanged: (v) =>
-                        app.setPostSourceLevel(v.first),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _deviceBadge == null
-                        ? '移动端发帖时在帖子下方显示设备徽章；当前为桌面端，不会发送设备信息'
-                        : '移动端发帖时显示设备徽章，当前将显示：$_deviceBadge',
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
             ),
           ),
           Card(

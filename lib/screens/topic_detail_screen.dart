@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,9 @@ import '../api/discourse_api.dart';
 import '../models.dart';
 import '../reactions.dart';
 import '../theme.dart';
+import '../plugin_actions.dart';
+import 'nested_topic_screen.dart';
+import '../widgets/plugin_strip.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import '../widgets/image_viewer.dart';
@@ -17,6 +21,8 @@ import '../widgets/poll_card.dart';
 import 'composer_screen.dart';
 import 'tag_topics_screen.dart';
 import 'public_profile_screen.dart';
+import '../api/friendly_error.dart';
+import '../blocked_users.dart';
 
 /// 提取 HTML 中所有 http(s) 图片地址（供全屏查看器翻页）
 List<String> _extractImages(String cookedHtml) {
@@ -47,7 +53,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
   String? _error;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _fillingGap = false;
   bool _likingBusy = false;
+  /// 阅读器内的嵌套视图开关：打开后主体换成嵌套回复树。
+  bool _nestedMode = false;
   int? _votingPostId;
   bool _bookmarkBusy = false;
   bool _notificationBusy = false;
@@ -71,7 +80,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       if (_focusedPostId == null && _scroll.position.extentAfter < 600 &&
           !_loadingMore &&
           !_loading &&
-          _detail!.posts.length < _detail!.stream.length) {
+          _detail!.hasMorePosts) {
         _loadMore();
       }
     });
@@ -113,7 +122,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     });
     try {
       final api = context.read<AppState>().api;
+      final blockedNow = context.read<AppState>().blockedUsernames;
       var d = await api.topic(widget.topicId, postNumber: _focusedPostNumber);
+      // 屏蔽用户的回复在拿到数据时就丢弃（主楼保留）。
+      d = _copyWithPosts(d, visiblePosts(d.posts, blockedNow));
       String? focusError;
       if (_focusedPostNumber != null) {
         final matches = d.posts.where((p) => p.postNumber == _focusedPostNumber &&
@@ -132,7 +144,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
           if (matches.isEmpty) throw ApiException('目标楼层不存在或无权访问');
           final posts = [...d.posts, ...matches]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
           d = _copyWithPosts(d, posts);
-        } catch (e) { focusError = '无法定位目标楼层：$e'; }
+        } catch (e) { focusError = '无法定位目标楼层：${friendlyError(e)}'; }
       }
       if (!mounted) return;
       setState(() {
@@ -143,7 +155,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = friendlyError(e);
         _loading = false;
       });
     }
@@ -151,32 +163,27 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
 
   Future<void> _loadMore() async {
     final d = _detail;
-    if (d == null || _loadingMore) return;
+    if (d == null || _loadingMore || d.nextAfter == null) return;
     setState(() => _loadingMore = true);
     try {
-      final loaded = d.posts.map((p) => p.id).toSet();
-      final nextIds =
-          d.stream.where((id) => !loaded.contains(id)).take(20).toList();
-      if (nextIds.isEmpty) {
-        setState(() => _loadingMore = false);
-        return;
-      }
-      final more =
-          await context.read<AppState>().api.topicPosts(widget.topicId, nextIds);
+      final page = await context.read<AppState>().api.topicPostsAfter(widget.topicId, d.nextAfter!);
       if (!mounted) return;
       final latest = _detail ?? d;
       final currentIds = latest.posts.map((p) => p.id).toSet();
-      final merged = [...latest.posts, ...more.where((p) => !currentIds.contains(p.id))]
-        ..sort((a, b) => a.postNumber.compareTo(b.postNumber));
-      setState(() => _detail = _copyWithPosts(latest, merged));
+      final blocked = context.read<AppState>().blockedUsernames;
+      final fresh = visiblePosts(page.posts.where((p) => !currentIds.contains(p.id)).toList(), blocked);
+      final merged = [...latest.posts, ...fresh]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      setState(() => _detail = _copyWithPosts(latest, merged, nextAfter: page.nextAfter, updateCursor: true));
     } catch (e) {
-      _hint('加载楼层失败：$e');
+      _hint('加载楼层失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
   }
 
-  TopicDetail _copyWithPosts(TopicDetail d, List<Post> posts) => TopicDetail(
+  TopicDetail _copyWithPosts(TopicDetail d, List<Post> posts,
+          {int? nextAfter, bool updateCursor = false, int? gapAfter, bool updateGap = false}) =>
+      TopicDetail(
         id: d.id,
         title: d.title,
         slug: d.slug,
@@ -191,12 +198,58 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         posts: posts,
         stream: d.stream,
         tags: d.tags,
+        redEnvelope: d.redEnvelope,
+        nextAfter: updateCursor ? nextAfter : d.nextAfter,
+        canReply: d.canReply,
+        gapAfter: updateGap ? gapAfter : d.gapAfter,
+        gapBefore: updateGap && gapAfter == null ? null : d.gapBefore,
       );
 
-  Future<void> _toggleLike(Post post) async {
-    // 心=等价于 like，走 reactions 接口
-    await _toggleReaction(post, 'heart');
+  /// 补齐定位跳转跳过的楼层：每次取缺口起点之后的一页，直到接上目标楼层。
+  Future<void> _fillGap() async {
+    final d = _detail;
+    if (d == null || _fillingGap || !d.hasGap) return;
+    setState(() => _fillingGap = true);
+    try {
+      final page = await context.read<AppState>().api.topicPostsAfter(widget.topicId, d.gapAfter!);
+      if (!mounted) return;
+      final latest = _detail ?? d;
+      final before = latest.gapBefore ?? d.gapBefore!;
+      final currentIds = latest.posts.map((p) => p.id).toSet();
+      final blocked = context.read<AppState>().blockedUsernames;
+      final inGap = page.posts.where((p) => p.postNumber < before).toList();
+      final fresh = visiblePosts(inGap.where((p) => !currentIds.contains(p.id)).toList(), blocked);
+      final merged = [...latest.posts, ...fresh]..sort((a, b) => a.postNumber.compareTo(b.postNumber));
+      final reached = inGap.map((p) => p.postNumber).fold(latest.gapAfter ?? 0, max);
+      final closed = page.nextAfter == null || inGap.length < page.posts.length || reached + 1 >= before ||
+          reached <= (latest.gapAfter ?? 0);
+      setState(() => _detail = _copyWithPosts(latest, merged, gapAfter: closed ? null : reached, updateGap: true));
+    } catch (e) {
+      _hint('加载中间楼层失败：${friendlyError(e)}');
+    } finally {
+      if (mounted) setState(() => _fillingGap = false);
+    }
   }
+
+  Widget _gapButton(TopicDetail d) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: _fillingGap
+              ? const NekolocLoadingFooter()
+              : OutlinedButton.icon(
+                  onPressed: _fillGap,
+                  icon: const Icon(Icons.unfold_more, size: 20),
+                  label: Text('加载中间楼层（#${d.gapAfter! + 1} – #${d.gapBefore! - 1}）'),
+                ),
+        ),
+      );
+
+  Widget _postWithGap(TopicDetail d, Post post) => d.hasGap && post.postNumber == d.gapAfter
+      ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_postCard(d, post), _gapButton(d)])
+      : _postCard(d, post);
+
+  /// 新版站点的“赞”就是赞成票。
+  Future<void> _toggleLike(Post post) => _vote(post, 'up');
 
   Future<void> _vote(Post post, String direction) async {
     final app = context.read<AppState>();
@@ -216,6 +269,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         final posts = [...d.posts];
         final latest = posts[index];
         posts[index] = latest.copyWith(
+          likeCount: toInt(result['like_count']) ?? latest.likeCount,
+          likedByMe: result.containsKey('acted') ? result['acted'] == true : latest.likedByMe,
           voteScore: toInt(result['vote_score']) ?? latest.voteScore,
           voteDirection: result['vote_direction']?.toString() ?? target,
           canVoteDown: result.containsKey('can_vote_down')
@@ -224,7 +279,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         setState(() => _detail = _copyWithPosts(d, posts));
       }
     } catch (e) {
-      _hint('投票失败：$e');
+      _hint('投票失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _votingPostId = null);
     }
@@ -250,7 +305,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
         setState(() => _detail = _copyWithPosts(d, posts));
       }
     } catch (e) {
-      _hint(e.toString());
+      _hint(friendlyError(e));
     } finally {
       if (mounted) setState(() => _likingBusy = false);
     }
@@ -284,13 +339,55 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       )).toList();
       setState(() => _detail = _copyWithPosts(d, posts));
     } catch (e) {
-      _hint('投票操作失败：$e');
+      _hint('投票操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _pollBusy.remove(key));
     }
   }
 
   /// 首帖工具栏和逐楼菜单共用同一收藏状态。
+  /// 参与抽奖：服务端返回最新的抽奖状态，只替换这一楼。
+  /// 查看楼层的原始 Markdown（可选中复制）。
+  Future<void> _showPostSource(Post post) async {
+    final api = context.read<AppState>().api;
+    try {
+      final raw = await api.postRaw(post.id);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('#${post.postNumber} 源码'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(child: SelectableText(raw)),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+          ],
+        ),
+      );
+    } catch (e) {
+      _hint('无法读取源码：${friendlyError(e)}');
+    }
+  }
+
+  /// 参与抽奖：服务端返回最新的抽奖状态，只替换这一楼。
+  Future<void> _joinLottery(Post post) async {
+    final lottery = post.lottery;
+    if (lottery == null) return;
+    final api = context.read<AppState>().api;
+    final next = await showLotteryDialog(context, api, lottery, postId: post.id);
+    if (next == null || !mounted) return;
+    final d = _detail;
+    if (d == null) return;
+    final idx = d.posts.indexWhere((p) => p.id == post.id);
+    if (idx < 0) return;
+    final posts = [...d.posts];
+    posts[idx] = posts[idx].copyWith(lottery: next);
+    setState(() => _detail = _copyWithPosts(d, posts));
+    _hint('已参与抽奖');
+  }
+
   Future<void> _toggleBookmark([Post? target]) async {
     final app = context.read<AppState>();
     final d = _detail;
@@ -334,7 +431,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       setState(() => _detail = _copyWithPosts(latest, posts));
       _hint(post.bookmarked ? '已取消收藏' : '已收藏楼层');
     } catch (e) {
-      _hint('收藏操作失败：$e');
+      _hint('收藏操作失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _bookmarkBusy = false);
     }
@@ -449,6 +546,37 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _deletePost(Post post) async {
+    final whole = post.postNumber == 1;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(whole ? '删除话题' : '删除帖子'),
+        content: Text(whole ? '删除一楼会删除整个话题，确定吗？' : '确定删除 #${post.postNumber} 吗？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await context.read<AppState>().api.deletePost(post.id);
+      if (!mounted) return;
+      if (whole) {
+        Navigator.pop(context);
+        return;
+      }
+      final d = _detail;
+      if (d != null) {
+        setState(() => _detail = _copyWithPosts(d, d.posts.where((p) => p.id != post.id).toList()));
+      }
+      _hint('已删除');
+    } catch (e) {
+      _hint('删除失败：${friendlyError(e)}');
+    }
+  }
+
   Future<void> _editPost(Post post) async {
     final app = context.read<AppState>();
     try {
@@ -460,7 +588,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       );
       if (changed == true && mounted) _load();
     } catch (e) {
-      _hint('无法编辑：$e');
+      _hint('无法编辑：${friendlyError(e)}');
     }
   }
 
@@ -474,7 +602,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       await _load();
       _hint('通知设置已更新');
     } catch (e) {
-      _hint('通知设置失败：$e');
+      _hint('通知设置失败：${friendlyError(e)}');
     } finally {
       if (mounted) setState(() => _notificationBusy = false);
     }
@@ -499,18 +627,23 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       );
       if (sent == true) _hint('举报已提交');
     } catch (e) {
-      _hint('获取举报理由失败：$e');
+      _hint('获取举报理由失败：${friendlyError(e)}');
     }
   }
 
   Widget _postCard(TopicDetail detail, Post post) => _PostCard(
     post: post, detail: detail,
+    // 新版站点已取消打赏。
+    onReward: null,
+    onLottery: context.read<AppState>().isLoggedIn ? () => _joinLottery(post) : null,
+    onSource: () => _showPostSource(post),
     onLike: () => _toggleLike(post),
     onShowReactions: () => _showReactionPicker(post),
     onReply: () => _reply(replyToPostNumber: post.postNumber,
       hint: '回复 #${post.postNumber} ${post.username}'),
     onCopyLink: () => _copyLink(post.postNumber),
     onChanged: _load, onEdit: post.canEdit ? () => _editPost(post) : null,
+    onDelete: post.canDelete ? () => _deletePost(post) : null,
     onReport: () => _reportPost(post),
     onVote: (direction) => _vote(post, direction),
     voting: _votingPostId == post.id,
@@ -554,6 +687,11 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                     ),
             ),
           IconButton(
+            tooltip: _nestedMode ? '切回普通视图' : '嵌套视图',
+            icon: Icon(_nestedMode ? Icons.view_agenda_outlined : Icons.account_tree_outlined),
+            onPressed: d == null ? null : () => setState(() => _nestedMode = !_nestedMode),
+          ),
+          IconButton(
             tooltip: '在浏览器中打开',
             icon: const Icon(Icons.open_in_new),
             onPressed: d == null ? null : _openInBrowser,
@@ -592,14 +730,18 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
           ),
         ],
       ),
-      floatingActionButton: d == null || d.closed || d.archived
+      // 未登录时仍显示回复按钮（点击提示登录）；已登录但无权回复时才隐藏。
+      floatingActionButton: d == null || d.closed || d.archived ||
+              (context.read<AppState>().isLoggedIn && !d.canReply)
           ? null
           : FloatingActionButton.extended(
               onPressed: () => _reply(),
               icon: const Icon(Icons.reply),
               label: const Text('回复'),
             ),
-      body: _loading
+      body: (_nestedMode && d != null)
+          ? NestedTopicView(topicId: d.id, slug: d.slug)
+          : _loading
           ? const LoadingView()
           : _error != null
               ? ErrorView(message: _error!, onRetry: _load)
@@ -619,13 +761,17 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             children: [
                               _TopicHeader(detail: d),
                               const SizedBox(height: 8),
+                              if (d.redEnvelope != null) ...[
+                                TopicRedEnvelopeBanner(envelope: d.redEnvelope!),
+                                const SizedBox(height: 8),
+                              ],
                               if (_focusError != null)
                                 Padding(padding: const EdgeInsets.all(8), child: Text(_focusError!,
                                   style: TextStyle(color: scheme.error))),
                               if (focused.isNotEmpty)
                                 Padding(padding: const EdgeInsets.all(8),
                                   child: Text('已定位到 #${focused.first.postNumber}')),
-                              _postCard(d, displayPosts.first),
+                              focused.isNotEmpty ? _postCard(d, displayPosts.first) : _postWithGap(d, displayPosts.first),
                             ],
                           );
                         }
@@ -637,11 +783,14 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                   _focusedPostId = null;
                                   _focusedPostNumber = null;
                                 });
-                                _load();
+                                // 已加载的首页与定位楼层保留下来，中间缺口可按需补齐。
+                                if (_detail == null) {
+                                  _load();
+                                }
                               },
                               icon: const Icon(Icons.forum_outlined), label: const Text('查看完整话题')));
                           }
-                          if (d.posts.length < d.stream.length) {
+                          if (d.hasMorePosts) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               child: Center(
@@ -652,7 +801,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                                         icon: const Icon(Icons.expand_more,
                                             size: 20),
                                         label: Text(
-                                            '加载更多（${d.posts.length}/${d.stream.length}）'),                                      ),
+                                            '加载更多（已显示 ${d.posts.length} / ${d.postsCount} 楼）'),                                      ),
                               ),
                             );
                           }
@@ -668,7 +817,7 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                             ),
                           );
                         }
-                        return _postCard(d, displayPosts[i]);
+                        return focused.isNotEmpty ? _postCard(d, displayPosts[i]) : _postWithGap(d, displayPosts[i]);
                       },
                     ),
     );
@@ -770,7 +919,7 @@ class _ReportPostDialogState extends State<_ReportPostDialog> {
       await context.read<AppState>().api.flagPost(widget.postId, reason, _note.text);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -836,15 +985,22 @@ class _PostCard extends StatelessWidget {
   final VoidCallback onCopyLink;
   final VoidCallback onChanged;
   final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final VoidCallback onReport;
   final ValueChanged<String> onVote;
   final bool voting;
   final VoidCallback onBookmark;
   final bool bookmarking;
   final void Function(PostPoll, List<String>?) onPollVote;
+  final VoidCallback? onReward;
+  final VoidCallback? onLottery;
+  final VoidCallback? onSource;
   final Set<String> pollBusy;
 
   const _PostCard({
+    this.onSource,
+    this.onReward,
+    this.onLottery,
     required this.post,
     required this.detail,
     required this.onLike,
@@ -853,6 +1009,7 @@ class _PostCard extends StatelessWidget {
     required this.onCopyLink,
     required this.onChanged,
     this.onEdit,
+    this.onDelete,
     required this.onReport,
     required this.onVote,
     required this.voting,
@@ -901,8 +1058,41 @@ class _PostCard extends StatelessWidget {
             // 图片：点击进入全屏查看器（缩放 / 双击 / 多图翻页）
             customWidgetBuilder: (element) {
               if (element.classes.contains('poll') && post.polls.any((poll) =>
-                  poll.name == element.attributes['data-poll-name'])) {
+                  poll.name == (element.attributes['data-poll'] ?? element.attributes['data-poll-name']))) {
                 return const SizedBox.shrink();
+              }
+              // 视频在新版标记里是空的占位 div：YouTube、哔哩哔哩打开观看页；站内上传的视频
+              // 转码好时已在接口层换成可播放的 <video>，走到这里的是还在转码的，到网页版观看。
+              if (element.classes.contains('video-embed')) {
+                final provider = element.attributes['data-provider'] ?? '';
+                final id = element.attributes['data-video-id'] ?? '';
+                final youtube = provider == 'youtube' && id.isNotEmpty;
+                final bilibili = provider == 'bilibili' && id.isNotEmpty;
+                final url = youtube
+                    ? 'https://www.youtube.com/watch?v=${Uri.encodeComponent(id)}'
+                    : bilibili
+                        ? 'https://www.bilibili.com/video/${Uri.encodeComponent(id)}'
+                        : '${AppState.baseUrl}/t/${detail.id}/${post.postNumber}';
+                return InkWell(
+                  onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.play_circle_outline),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(youtube
+                          ? 'YouTube 视频（点击观看）'
+                          : bilibili
+                              ? '哔哩哔哩视频（点击观看）'
+                              : '视频（点击在网页版观看）')),
+                    ]),
+                  ),
+                );
               }
               if (element.localName != 'img') return null;
               final rawSrc = element.attributes['src'] ?? '';
@@ -1025,6 +1215,8 @@ class _PostCard extends StatelessWidget {
                   onSelected: (v) {
                     if (v == 'copy') onCopyLink();
                     if (v == 'edit') onEdit?.call();
+                    if (v == 'delete') onDelete?.call();
+                    if (v == 'source') onSource?.call();
                     if (v == 'report') onReport();
                     if (v == 'bookmark') onBookmark();
                   },
@@ -1034,6 +1226,9 @@ class _PostCard extends StatelessWidget {
                       child: Text(post.bookmarked ? '取消收藏此楼层' : '收藏此楼层')),
                     if (onEdit != null)
                       const PopupMenuItem(value: 'edit', child: Text('编辑帖子')),
+                    if (onDelete != null)
+                      const PopupMenuItem(value: 'delete', child: Text('删除帖子')),
+                    const PopupMenuItem(value: 'source', child: Text('查看源码')),
                     const PopupMenuItem(value: 'report', child: Text('举报帖子')),
                   ],
                   icon: Icon(Icons.more_horiz, size: 20, color: muted),
@@ -1042,6 +1237,11 @@ class _PostCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             body,
+            PostPluginStrip(
+              post: post,
+              onReward: onReward,
+              onLottery: onLottery,
+            ),
             if (!post.hidden)
               for (final poll in post.polls)
                 PollCard(
@@ -1071,53 +1271,6 @@ class _PostCard extends StatelessWidget {
                         ? Icons.arrow_circle_down : Icons.arrow_circle_down_outlined),
                   ),
                 ],
-                // 表情反应区：单击 toggle 心、长按打开选择器
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onLike,
-                  onLongPress: onShowReactions,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          post.currentUserReaction != null
-                              ? reactionEmoji(post.currentUserReaction)
-                              : '❤',
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          post.reactionUsersCount > 0
-                              ? '${post.reactionUsersCount}'
-                              : '赞',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: post.currentUserReaction != null
-                                ? NL.love
-                                : muted,
-                            fontWeight: post.currentUserReaction != null
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // 小箭头点击展开表情选择器
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onShowReactions,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 6),
-                    child: Icon(Icons.expand_less,
-                        size: 16, color: muted),
-                  ),
-                ),
                 const SizedBox(width: 6),
                 TextButton.icon(
                   onPressed: onReply,

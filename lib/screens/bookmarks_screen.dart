@@ -5,6 +5,7 @@ import '../models.dart';
 import '../util.dart';
 import '../widgets/common.dart';
 import 'topic_detail_screen.dart';
+import '../api/friendly_error.dart';
 
 class BookmarksScreen extends StatefulWidget {
   const BookmarksScreen({super.key});
@@ -38,7 +39,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       if (!mounted || requestId != _requestId) return;
       setState(() { _items = list; _page = 0; _hasMore = list.isNotEmpty; });
     } catch (e) {
-      if (mounted && requestId == _requestId) setState(() => _error = e.toString());
+      if (mounted && requestId == _requestId) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted && requestId == _requestId) setState(() => _loading = false);
     }
@@ -57,7 +58,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       final added = list.where((b) => seen.add(b.id)).toList();
       setState(() { _items.addAll(added); _page++; _hasMore = added.isNotEmpty; });
     } catch (e) {
-      if (mounted && requestId == _requestId) setState(() => _pageError = e.toString());
+      if (mounted && requestId == _requestId) setState(() => _pageError = friendlyError(e));
     } finally {
       if (mounted && requestId == _requestId) setState(() => _loadingMore = false);
     }
@@ -72,7 +73,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
       // Refresh the first page: deletion changes page offsets on the server.
       await _load();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('取消收藏失败：$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('取消收藏失败：${friendlyError(e)}')));
     } finally {
       if (mounted) setState(() => _deleting.remove(item.id));
     }
@@ -110,7 +111,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
               trailing: IconButton(tooltip: '取消收藏', onPressed: _deleting.contains(b.id) ? null : () => _remove(b),
                 icon: const Icon(Icons.bookmark_remove_outlined)),
               onTap: b.topicId == null ? null : () async {
-                await Navigator.push(context, MaterialPageRoute(builder: (_) => TopicDetailScreen(topicId: b.topicId!, initialPostId: b.postId)));
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => TopicDetailScreen(topicId: b.topicId!, initialPostId: b.postId,
+                    initialPostNumber: (b.postNumber ?? 0) > 1 ? b.postNumber : null)));
                 if (mounted) _load();
               },
             );
